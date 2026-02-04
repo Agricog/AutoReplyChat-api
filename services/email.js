@@ -68,7 +68,7 @@ export async function sendLeadNotification({
     `;
 
     const { data, error } = await resend.emails.send({
-      from: 'AutaiChat <notifications@yourdomain.com>', // You'll need to verify a domain in Resend
+      from: 'AutaiChat Notifications <notifications@shootsync.co.uk>',
       to: [businessEmail],
       subject: `New Lead: ${leadName}`,
       html: emailHtml,
