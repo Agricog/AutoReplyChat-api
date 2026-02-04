@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import chatRoutes from './routes/chat.js';
 import contentRoutes from './routes/content.js';
+import adminRoutes from './routes/admin.js';
 import { initializeDatabase } from './db/database.js';
 
 dotenv.config();
@@ -29,6 +30,7 @@ app.get('/health', (req, res) => {
 // Routes
 app.use('/api', chatRoutes);
 app.use('/api/content', contentRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Error handling
 app.use((err, req, res, next) => {
