@@ -42,24 +42,24 @@ app.use(session({
   store: new PgSession({
     pool: pgPool,
     tableName: 'sessions',
-    createTableIfMissing: false // Already created in init.sql
+    createTableIfMissing: false
   }),
   secret: process.env.SESSION_SECRET || 'your-secret-key-change-in-production',
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: process.env.NODE_ENV === 'production', // HTTPS only in production
-    httpOnly: true, // Prevent XSS
-    maxAge: 15 * 60 * 1000, // 15 minutes
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    maxAge: 15 * 60 * 1000,
     sameSite: 'lax'
   },
-  name: 'sessionId' // Don't use default 'connect.sid'
+  name: 'sessionId'
 }));
 
 // Session timeout - extend on activity
 app.use((req, res, next) => {
   if (req.session && req.session.customerId) {
-    req.session.touch(); // Extend session on each request
+    req.session.touch();
   }
   next();
 });
@@ -83,7 +83,7 @@ app.use('/api/content', requireAuth, contentRoutes);
 app.use('/api/customers', requireAuth, customersRoutes);
 app.use('/api/dashboard', requireAuth, dashboardRoutes);
 
-// Admin routes (no auth for now - add admin role check later)
+// Admin routes (no auth for now)
 app.use('/api/admin', adminRoutes);
 
 // 404 handler
@@ -105,21 +105,3 @@ app.listen(PORT, () => {
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔒 Session store: PostgreSQL`);
 });
-```
-
-**Commit message:** `"Configure server with session management and auth middleware"`
-
----
-
-## **Step 6: Add SESSION_SECRET to Railway**
-
-**Go to Railway → AutaiChat-api → Variables**
-
-**Add:**
-```
-SESSION_SECRET=your-random-string-here-change-this-to-something-secure
-```
-
-**Generate a secure random string** - use this command or make one up (32+ characters):
-```
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
