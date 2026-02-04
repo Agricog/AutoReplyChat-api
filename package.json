@@ -21,8 +21,3 @@
     "cheerio": "^1.0.0-rc.12"
   }
 }
-```
-
-**3. Add to Railway Variables:**
-```
-TRANSCRIPT_API_KEY=your-key-here
