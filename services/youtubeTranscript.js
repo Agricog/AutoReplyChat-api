@@ -1,4 +1,4 @@
-import YTDlpWrap from 'yt-dlp-wrap';
+import youtubedl from 'youtube-dl-exec';
 import { AssemblyAI } from 'assemblyai';
 import { YoutubeTranscript } from 'youtube-transcript';
 import fs from 'fs';
@@ -66,18 +66,14 @@ async function downloadAndTranscribe(videoId) {
   try {
     console.log('[YouTube] Downloading audio with yt-dlp...');
     
-    // Initialize yt-dlp wrapper with default binary path
-    const ytDlpWrap = new YTDlpWrap.default();
-    
     // Download audio only
-    await ytDlpWrap.execPromise([
-      videoUrl,
-      '-x',  // Extract audio
-      '--audio-format', 'mp3',
-      '--audio-quality', '5',  // Lower quality = smaller file
-      '-o', audioPath,
-      '--no-playlist'
-    ]);
+    await youtubedl(videoUrl, {
+      extractAudio: true,
+      audioFormat: 'mp3',
+      audioQuality: 5,
+      output: audioPath,
+      noPlaylist: true
+    });
 
     console.log('[YouTube] Audio downloaded, transcribing with AssemblyAI...');
 
