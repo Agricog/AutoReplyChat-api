@@ -1,5 +1,5 @@
 import { YoutubeTranscript } from 'youtube-transcript';
-import ytdl from 'ytdl-core';
+import ytdl from '@distube/ytdl-core';
 import { OpenAI } from 'openai';
 import fs from 'fs';
 import path from 'path';
