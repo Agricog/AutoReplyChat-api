@@ -1,4 +1,8 @@
-import { YoutubeTranscript } from 'youtube-transcript';
+import { AssemblyAI } from 'assemblyai';
+
+const client = new AssemblyAI({
+  apiKey: process.env.ASSEMBLYAI_API_KEY
+});
 
 // Extract video ID from various YouTube URL formats
 function extractVideoId(url) {
@@ -15,47 +19,36 @@ function extractVideoId(url) {
   throw new Error('Invalid YouTube URL format');
 }
 
-// Fetch transcript from YouTube captions
+// Transcribe YouTube video using AssemblyAI
 export async function getYoutubeTranscript(videoUrl) {
   try {
     const videoId = extractVideoId(videoUrl);
+    const fullUrl = videoUrl.includes('youtube.com') ? videoUrl : `https://www.youtube.com/watch?v=${videoId}`;
     
-    console.log(`[YouTube] Extracting captions for video ID: ${videoId}`);
+    console.log(`[YouTube] Transcribing video: ${videoId}`);
+    console.log(`[YouTube] This may take 30-90 seconds depending on video length...`);
 
-    const transcript = await YoutubeTranscript.fetchTranscript(videoId);
+    const transcript = await client.transcripts.transcribe({
+      audio: fullUrl
+    });
 
-    if (!transcript || transcript.length === 0) {
-      throw new Error('No captions available for this video');
+    if (transcript.status === 'error') {
+      throw new Error(transcript.error);
     }
 
-    const fullText = transcript
-      .map(segment => segment.text)
-      .join(' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    console.log(`[YouTube] ✓ Captions extracted: ${fullText.split(' ').length} words`);
+    console.log(`[YouTube] ✓ Transcription complete: ${transcript.words.length} words`);
 
     return {
       videoId,
-      text: fullText,
-      wordCount: fullText.split(/\s+/).length,
-      method: 'captions',
-      duration: transcript[transcript.length - 1]?.offset || 0
+      text: transcript.text,
+      wordCount: transcript.words.length,
+      method: 'assemblyai',
+      duration: transcript.audio_duration
     };
 
   } catch (error) {
     console.error('[YouTube] Error:', error.message);
-    
-    if (error.message.includes('Transcript is disabled')) {
-      throw new Error('This video does not have captions enabled. Please try a video with captions (most educational content, TED talks, news videos have them).');
-    } else if (error.message.includes('Could not find')) {
-      throw new Error('No captions available for this video. Please try a different video.');
-    } else if (error.message.includes('Invalid')) {
-      throw new Error('Invalid YouTube URL or video ID');
-    } else {
-      throw new Error(`Failed to extract captions: ${error.message}`);
-    }
+    throw new Error(`Failed to transcribe video: ${error.message}`);
   }
 }
 
