@@ -29,7 +29,8 @@ export async function getYoutubeTranscript(videoUrl) {
     console.log(`[YouTube] This may take 30-90 seconds depending on video length...`);
 
     const transcript = await client.transcripts.transcribe({
-      audio: fullUrl
+      audio: fullUrl,
+      speech_model: 'universal-2'
     });
 
     if (transcript.status === 'error') {
