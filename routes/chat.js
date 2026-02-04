@@ -1,5 +1,6 @@
 import express from 'express';
 import Anthropic from '@anthropic-ai/sdk';
+import { sendLeadNotification } from '../services/email.js';
 
 const router = express.Router();
 
@@ -58,12 +59,29 @@ router.post('/lead', async (req, res) => {
 
     console.log('Lead captured:', { name, email, customerId });
     
-    // TODO: Store in database
-    // TODO: Send email notification to business owner
+    // TODO: Store in database when we add Postgres
+
+    // Send email notification to business owner
+    // For now, using a test email - you'll configure per customer later
+    const businessEmail = process.env.TEST_BUSINESS_EMAIL || 'your-email@example.com';
+    
+    const emailResult = await sendLeadNotification({
+      businessEmail,
+      leadName: name,
+      leadEmail: email,
+      conversation: conversation || [],
+      customerId: customerId || 'default'
+    });
+
+    if (!emailResult.success) {
+      console.error('Failed to send email:', emailResult.error);
+      // Still return success to user - email failure shouldn't break lead capture
+    }
 
     res.json({ 
       success: true,
-      message: 'Lead captured successfully' 
+      message: 'Lead captured successfully',
+      emailSent: emailResult.success
     });
 
   } catch (error) {
