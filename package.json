@@ -20,6 +20,7 @@
     "axios": "^1.6.0",
     "cheerio": "^1.0.0-rc.12",
     "youtube-transcript": "^1.2.1",
+    "ytdl-core": "^4.11.5",
     "openai": "^4.0.0"
   }
 }
