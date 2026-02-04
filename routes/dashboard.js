@@ -53,6 +53,12 @@ router.get('/:customerId', async (req, res) => {
         .file-input { display: none; }
         .upload-icon { font-size: 48px; color: #9ca3af; margin-bottom: 10px; }
         .file-info { margin-top: 15px; padding: 10px; background: #e0f2fe; border-radius: 6px; }
+        
+        /* Scrape type buttons */
+        .scrape-type-btn { border: none; border-radius: 6px; cursor: pointer; font-weight: 600; transition: all 0.2s; }
+        .scrape-type-btn.active { background: #2563eb !important; }
+        .scrape-type-btn:not(.active) { background: #6b7280 !important; }
+        .scrape-type-btn:not(.active):hover { background: #4b5563 !important; }
       </style>
     </head>
     <body>
@@ -104,10 +110,23 @@ router.get('/:customerId', async (req, res) => {
 
             <!-- Website Scraping Section -->
             <div class="upload-section">
-              <h3 style="margin-bottom: 10px;">Scrape Website</h3>
-              <p style="color: #6b7280; font-size: 14px; margin-bottom: 10px;">Enter a website URL to extract and train your chatbot on the content.</p>
-              <input type="text" id="website-url" placeholder="https://example.com/page" />
-              <button onclick="scrapeWebsite()" id="scrapeBtn">Scrape Website</button>
+              <h3 style="margin-bottom: 10px;">Train from Website</h3>
+              <p style="color: #6b7280; font-size: 14px; margin-bottom: 15px;">Enter a website URL and choose how to scrape it.</p>
+              
+              <!-- Scrape type buttons -->
+              <div style="margin: 15px 0;">
+                <button type="button" class="scrape-type-btn active" data-type="full" 
+                        style="margin-right: 10px; padding: 8px 16px; font-size: 14px;">
+                  Full Website
+                </button>
+                <button type="button" class="scrape-type-btn" data-type="single" 
+                        style="padding: 8px 16px; font-size: 14px;">
+                  Single Page
+                </button>
+              </div>
+              
+              <input type="text" id="website-url" placeholder="https://example.com" />
+              <button onclick="scrapeWebsite()" id="scrapeBtn">Start Scraping</button>
               <div id="scrape-result"></div>
             </div>
 
@@ -240,18 +259,29 @@ Examples:
           }
         }
 
+        // Handle scrape type button clicks
+        document.querySelectorAll('.scrape-type-btn').forEach(btn => {
+          btn.addEventListener('click', function() {
+            document.querySelectorAll('.scrape-type-btn').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+          });
+        });
+
         // Scrape website
         async function scrapeWebsite() {
           const url = document.getElementById('website-url').value;
           const result = document.getElementById('scrape-result');
           const scrapeBtn = document.getElementById('scrapeBtn');
+          
+          // Get selected scrape type
+          const activeBtn = document.querySelector('.scrape-type-btn.active');
+          const isFullSite = activeBtn.dataset.type === 'full';
 
           if (!url.trim()) {
             result.innerHTML = '<div class="error">Please enter a website URL</div>';
             return;
           }
 
-          // Validate URL format
           try {
             new URL(url);
           } catch (e) {
@@ -259,7 +289,11 @@ Examples:
             return;
           }
 
-          result.innerHTML = '<div style="color: #6b7280; margin-top: 10px;">Scraping website... This may take a few seconds.</div>';
+          const message = isFullSite 
+            ? '🔄 Crawling full website... This may take 30-60 seconds.' 
+            : '🔄 Scraping single page...';
+          
+          result.innerHTML = '<div style="color: #6b7280; margin-top: 10px;">' + message + '</div>';
           scrapeBtn.disabled = true;
 
           try {
@@ -268,14 +302,19 @@ Examples:
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 customerId: customerId,
-                url: url
+                url: url,
+                fullSite: isFullSite
               })
             });
 
             const data = await response.json();
 
             if (data.success) {
-              result.innerHTML = '<div class="success">✓ Website scraped! ' + data.chunksStored + ' chunks stored from "' + data.title + '" (' + data.wordCount + ' words)</div>';
+              if (isFullSite) {
+                result.innerHTML = '<div class="success">✓ Full website crawled! ' + data.pagesScraped + ' pages scraped, ' + data.totalChunks + ' chunks stored.</div>';
+              } else {
+                result.innerHTML = '<div class="success">✓ Page scraped! ' + data.chunksStored + ' chunks stored (' + data.wordCount + ' words)</div>';
+              }
               document.getElementById('website-url').value = '';
               loadStats();
             } else {
