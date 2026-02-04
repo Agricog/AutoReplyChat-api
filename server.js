@@ -4,6 +4,8 @@ import dotenv from 'dotenv';
 import chatRoutes from './routes/chat.js';
 import contentRoutes from './routes/content.js';
 import adminRoutes from './routes/admin.js';
+import customersRoutes from './routes/customers.js';
+import dashboardRoutes from './routes/dashboard.js';
 import { initializeDatabase } from './db/database.js';
 
 dotenv.config();
@@ -20,7 +22,7 @@ app.use(cors({
   ],
   credentials: true
 }));
-app.use(express.json({ limit: '10mb' })); // Increased limit for document uploads
+app.use(express.json({ limit: '10mb' }));
 
 // Health check
 app.get('/health', (req, res) => {
@@ -31,6 +33,8 @@ app.get('/health', (req, res) => {
 app.use('/api', chatRoutes);
 app.use('/api/content', contentRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/customers', customersRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 // Error handling
 app.use((err, req, res, next) => {
@@ -47,6 +51,8 @@ async function startServer() {
     // Start server
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`API server running on port ${PORT}`);
+      console.log(`Admin panel: /api/admin`);
+      console.log(`Customer dashboard: /api/dashboard/:customerId`);
     });
   } catch (error) {
     console.error('Failed to start server:', error);
