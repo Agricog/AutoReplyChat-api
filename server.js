@@ -18,16 +18,25 @@ import signupRoute from './routes/signup.js';
 // Import middleware
 import { requireAuth } from './middleware/auth.js';
 
+// Import migrations
+import { runMigrations } from './db/migrate.js';
+
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Trust Railway's proxy
+app.set('trust proxy', 1);
 
 // PostgreSQL session store
 const PgSession = connectPgSimple(session);
 const pgPool = new pg.Pool({
   connectionString: process.env.DATABASE_URL
 });
+
+// Run database migrations on startup
+await runMigrations();
 
 // CORS configuration
 app.use(cors({
