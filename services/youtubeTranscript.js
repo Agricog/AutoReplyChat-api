@@ -66,7 +66,8 @@ async function downloadAndTranscribe(videoId) {
   try {
     console.log('[YouTube] Downloading audio with yt-dlp...');
     
-    const ytDlpWrap = new YTDlpWrap();
+    // Initialize yt-dlp wrapper with default binary path
+    const ytDlpWrap = new YTDlpWrap.default();
     
     // Download audio only
     await ytDlpWrap.execPromise([
