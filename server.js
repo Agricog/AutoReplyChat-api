@@ -12,9 +12,11 @@ import customersRoutes from './routes/customers.js';
 import dashboardRoutes from './routes/dashboard.js';
 import adminRoutes from './routes/admin.js';
 import authRoutes from './routes/auth.js';
+import loginRoute from './routes/login.js';
+import signupRoute from './routes/signup.js';
 
 // Import middleware
-import { requireAuth, requireOwnData } from './middleware/auth.js';
+import { requireAuth } from './middleware/auth.js';
 
 dotenv.config();
 
@@ -74,6 +76,10 @@ app.get('/health', (req, res) => {
 
 // Auth routes (no auth required)
 app.use('/api/auth', authRoutes);
+
+// Login and signup pages (no auth required)
+app.use('/login', loginRoute);
+app.use('/signup', signupRoute);
 
 // Public chat endpoint (no auth required - used by widget)
 app.use('/api/chat', chatRoutes);
