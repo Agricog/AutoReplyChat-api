@@ -91,7 +91,7 @@ router.post('/text', async (req, res) => {
 // POST /api/content/website - Scrape and store website content
 router.post('/website', async (req, res) => {
   try {
-    const { customerId, url } = req.body;
+    const { customerId, url, fullSite = true } = req.body;
 
     if (!customerId || !url) {
       return res.status(400).json({ error: 'customerId and url are required' });
@@ -105,25 +105,89 @@ router.post('/website', async (req, res) => {
       return res.status(400).json({ error: 'Invalid URL format' });
     }
 
+    console.log(`[Website Scrape] Customer ${customerId} | Mode: ${fullSite ? 'FULL SITE' : 'SINGLE PAGE'} | URL: ${validUrl.href}`);
+
     // Import scraper
-    const { scrapeWebpage } = await import('../services/webScraper.js');
+    const { scrapeWebpage, crawlWebsite } = await import('../services/webScraper.js');
 
-    // Scrape the webpage
-    const pageData = await scrapeWebpage(validUrl.href);
+    let totalChunks = 0;
+    let pageCount = 0;
 
-    // Store in database
-    const result = await storeDocument({
-      customerId: parseInt(customerId),
-      title: pageData.title,
-      contentType: 'website',
-      sourceUrl: pageData.url,
-      content: pageData.content,
-      metadata: {
-        scrapedAt: new Date().toISOString(),
-        wordCount: pageData.wordCount,
-        url: pageData.url
+    if (fullSite) {
+      console.log('[Website Scrape] Starting full website crawl...');
+      
+      // Crawl entire website (up to 20 pages)
+      const pages = await crawlWebsite(validUrl.href, 20);
+      
+      console.log(`[Website Scrape] Crawl complete. ${pages.length} pages found.`);
+      
+      // Store each page as a separate document
+      for (const pageData of pages) {
+        const result = await storeDocument({
+          customerId: parseInt(customerId),
+          title: pageData.title,
+          contentType: 'website',
+          sourceUrl: pageData.url,
+          content: pageData.content,
+          metadata: {
+            scrapedAt: new Date().toISOString(),
+            wordCount: pageData.wordCount,
+            url: pageData.url,
+            fullSiteCrawl: true
+          }
+        });
+        totalChunks += result.chunksStored;
+        pageCount++;
+        console.log(`[Website Scrape] Stored page ${pageCount}: ${pageData.title} (${result.chunksStored} chunks)`);
       }
+
+      console.log(`[Website Scrape] Complete! ${pageCount} pages, ${totalChunks} total chunks stored.`);
+
+      res.json({
+        success: true,
+        message: `Website crawled successfully! ${pageCount} pages scraped.`,
+        pagesScraped: pageCount,
+        totalChunks: totalChunks
+      });
+
+    } else {
+      console.log('[Website Scrape] Scraping single page...');
+      
+      // Scrape single page only
+      const pageData = await scrapeWebpage(validUrl.href);
+
+      const result = await storeDocument({
+        customerId: parseInt(customerId),
+        title: pageData.title,
+        contentType: 'website',
+        sourceUrl: pageData.url,
+        content: pageData.content,
+        metadata: {
+          scrapedAt: new Date().toISOString(),
+          wordCount: pageData.wordCount,
+          url: pageData.url
+        }
+      });
+
+      console.log(`[Website Scrape] Single page stored: ${pageData.title} (${result.chunksStored} chunks)`);
+
+      res.json({
+        success: true,
+        message: 'Single page scraped successfully',
+        title: pageData.title,
+        wordCount: pageData.wordCount,
+        chunksStored: result.chunksStored
+      });
+    }
+
+  } catch (error) {
+    console.error('[Website Scrape] ERROR:', error);
+    res.status(500).json({ 
+      error: 'Failed to scrape website',
+      details: error.message 
     });
+  }
+});
 
     res.json({
       success: true,
