@@ -1,65 +1,125 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import session from 'express-session';
+import connectPgSimple from 'connect-pg-simple';
+import pg from 'pg';
+
+// Import routes
 import chatRoutes from './routes/chat.js';
 import contentRoutes from './routes/content.js';
-import adminRoutes from './routes/admin.js';
 import customersRoutes from './routes/customers.js';
 import dashboardRoutes from './routes/dashboard.js';
-import { initializeDatabase } from './db/database.js';
+import adminRoutes from './routes/admin.js';
+import authRoutes from './routes/auth.js';
+
+// Import middleware
+import { requireAuth, requireOwnData } from './middleware/auth.js';
 
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
 
-// Middleware
+// PostgreSQL session store
+const PgSession = connectPgSimple(session);
+const pgPool = new pg.Pool({
+  connectionString: process.env.DATABASE_URL
+});
+
+// CORS configuration
 app.use(cors({
-  origin: [
-    'https://autoreplychat.com',
-    'https://api.autoreplychat.com',
-    'https://autaichat-production.up.railway.app',
-    'http://localhost:5173',
-    'http://localhost:3000'
-  ],
+  origin: process.env.WIDGET_URL || 'http://localhost:5173',
   credentials: true
 }));
-app.use(express.json({ limit: '10mb' }));
 
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
+// Body parsing
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// Routes
-app.use('/api', chatRoutes);
-app.use('/api/content', contentRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/customers', customersRoutes);
-app.use('/api/dashboard', dashboardRoutes);
+// Session configuration
+app.use(session({
+  store: new PgSession({
+    pool: pgPool,
+    tableName: 'sessions',
+    createTableIfMissing: false // Already created in init.sql
+  }),
+  secret: process.env.SESSION_SECRET || 'your-secret-key-change-in-production',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production', // HTTPS only in production
+    httpOnly: true, // Prevent XSS
+    maxAge: 15 * 60 * 1000, // 15 minutes
+    sameSite: 'lax'
+  },
+  name: 'sessionId' // Don't use default 'connect.sid'
+}));
 
-// Error handling
-app.use((err, req, res, next) => {
-  console.error('Error:', err);
-  res.status(500).json({ error: 'Internal server error' });
-});
-
-// Initialize database and start server
-async function startServer() {
-  try {
-    // Initialize database schema
-    await initializeDatabase();
-    
-    // Start server
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`API server running on port ${PORT}`);
-      console.log(`Admin panel: /api/admin`);
-      console.log(`Customer dashboard: /api/dashboard/:customerId`);
-    });
-  } catch (error) {
-    console.error('Failed to start server:', error);
-    process.exit(1);
+// Session timeout - extend on activity
+app.use((req, res, next) => {
+  if (req.session && req.session.customerId) {
+    req.session.touch(); // Extend session on each request
   }
-}
+  next();
+});
 
-startServer();
+// Health check (no auth required)
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'ok',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Auth routes (no auth required)
+app.use('/api/auth', authRoutes);
+
+// Public chat endpoint (no auth required - used by widget)
+app.use('/api/chat', chatRoutes);
+
+// Protected routes - require authentication
+app.use('/api/content', requireAuth, contentRoutes);
+app.use('/api/customers', requireAuth, customersRoutes);
+app.use('/api/dashboard', requireAuth, dashboardRoutes);
+
+// Admin routes (no auth for now - add admin role check later)
+app.use('/api/admin', adminRoutes);
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
+
+// Error handler
+app.use((err, req, res, next) => {
+  console.error('Server error:', err);
+  res.status(500).json({ 
+    error: 'Internal server error',
+    message: process.env.NODE_ENV === 'production' ? 'Something went wrong' : err.message
+  });
+});
+
+app.listen(PORT, () => {
+  console.log(`🚀 Auto Reply Chat API running on port ${PORT}`);
+  console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🔒 Session store: PostgreSQL`);
+});
+```
+
+**Commit message:** `"Configure server with session management and auth middleware"`
+
+---
+
+## **Step 6: Add SESSION_SECRET to Railway**
+
+**Go to Railway → AutaiChat-api → Variables**
+
+**Add:**
+```
+SESSION_SECRET=your-random-string-here-change-this-to-something-secure
+```
+
+**Generate a secure random string** - use this command or make one up (32+ characters):
+```
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
