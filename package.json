@@ -19,8 +19,6 @@
     "mammoth": "^1.6.0",
     "axios": "^1.6.0",
     "cheerio": "^1.0.0-rc.12",
-    "youtube-transcript": "^1.2.1",
-    "@distube/ytdl-core": "^4.14.4",
-    "openai": "^4.0.0"
+    "youtube-transcript": "^1.2.1"
   }
 }
