@@ -203,9 +203,11 @@ router.post('/youtube', async (req, res) => {
     // Import YouTube transcript service
     const { getYoutubeTranscript, getVideoMetadata } = await import('../services/youtubeTranscript.js');
 
-    // Extract transcript
+    // Extract transcript (tries captions first, then Whisper)
     const transcriptData = await getYoutubeTranscript(videoUrl);
     const metadata = await getVideoMetadata(transcriptData.videoId);
+
+    console.log(`[YouTube] Transcript obtained via ${transcriptData.method}`);
 
     // Store transcript as document
     const result = await storeDocument({
@@ -219,9 +221,30 @@ router.post('/youtube', async (req, res) => {
         videoId: transcriptData.videoId,
         wordCount: transcriptData.wordCount,
         duration: transcriptData.duration,
-        thumbnail: metadata.thumbnail
+        thumbnail: metadata.thumbnail,
+        extractionMethod: transcriptData.method
       }
     });
+
+    console.log(`[YouTube] Transcript stored: ${transcriptData.wordCount} words, ${result.chunksStored} chunks`);
+
+    res.json({
+      success: true,
+      message: `YouTube transcript extracted successfully via ${transcriptData.method}`,
+      videoId: transcriptData.videoId,
+      wordCount: transcriptData.wordCount,
+      chunksStored: result.chunksStored,
+      method: transcriptData.method
+    });
+
+  } catch (error) {
+    console.error('[YouTube] Error:', error);
+    res.status(500).json({ 
+      error: 'Failed to extract YouTube transcript',
+      details: error.message 
+    });
+  }
+});
 
     console.log(`[YouTube] Transcript stored: ${transcriptData.wordCount} words, ${result.chunksStored} chunks`);
 
