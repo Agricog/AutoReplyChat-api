@@ -25,9 +25,10 @@ router.get('/:customerId', async (req, res) => {
         .tab.active { border-bottom-color: #2563eb; color: #2563eb; font-weight: 600; }
         .tab-content { display: none; }
         .tab-content.active { display: block; }
-        textarea, input { width: 100%; padding: 12px; border: 1px solid #d1d5db; border-radius: 6px; margin: 10px 0; font-family: inherit; }
+        textarea, input[type="text"] { width: 100%; padding: 12px; border: 1px solid #d1d5db; border-radius: 6px; margin: 10px 0; font-family: inherit; }
         button { background: #2563eb; color: white; padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; }
         button:hover { background: #1d4ed8; }
+        button:disabled { background: #9ca3af; cursor: not-allowed; }
         .code-block { background: #1f2937; color: #f9fafb; padding: 20px; border-radius: 6px; overflow-x: auto; margin: 10px 0; }
         .code-block code { font-family: 'Courier New', monospace; font-size: 14px; white-space: pre; }
         .stat { display: inline-block; margin-right: 30px; }
@@ -42,6 +43,16 @@ router.get('/:customerId', async (req, res) => {
         .lead-email { color: #2563eb; font-weight: 600; }
         .lead-date { color: #6b7280; font-size: 12px; }
         .success { background: #d1fae5; color: #065f46; padding: 12px; border-radius: 6px; margin: 10px 0; }
+        .error { background: #fee2e2; color: #991b1b; padding: 12px; border-radius: 6px; margin: 10px 0; }
+        
+        /* File upload styles */
+        .upload-section { margin-bottom: 30px; }
+        .file-drop-zone { border: 2px dashed #d1d5db; border-radius: 8px; padding: 40px; text-align: center; background: #f9fafb; cursor: pointer; transition: all 0.3s; }
+        .file-drop-zone:hover { border-color: #2563eb; background: #eff6ff; }
+        .file-drop-zone.drag-over { border-color: #2563eb; background: #dbeafe; }
+        .file-input { display: none; }
+        .upload-icon { font-size: 48px; color: #9ca3af; margin-bottom: 10px; }
+        .file-info { margin-top: 15px; padding: 10px; background: #e0f2fe; border-radius: 6px; }
       </style>
     </head>
     <body>
@@ -74,8 +85,28 @@ router.get('/:customerId', async (req, res) => {
             <h2>Upload Training Content</h2>
             <p style="color: #6b7280; margin-bottom: 20px;">Add content for your chatbot to learn from. The more context you provide, the better it will answer questions.</p>
             
-            <input type="text" id="doc-title" placeholder="Document title (e.g., 'Product Information', 'FAQ')" />
-            <textarea id="doc-content" rows="12" placeholder="Paste your content here...
+            <!-- File Upload Section -->
+            <div class="upload-section">
+              <h3 style="margin-bottom: 10px;">Upload Files</h3>
+              <div class="file-drop-zone" id="dropZone">
+                <div class="upload-icon">📄</div>
+                <p><strong>Click to browse</strong> or drag and drop files here</p>
+                <p style="color: #6b7280; font-size: 14px; margin-top: 5px;">Supports: PDF, Word (.docx), Text (.txt), CSV</p>
+                <p style="color: #6b7280; font-size: 12px;">Max file size: 20MB</p>
+                <input type="file" id="fileInput" class="file-input" accept=".pdf,.docx,.doc,.txt,.csv" />
+              </div>
+              <div id="file-info" class="file-info" style="display: none;"></div>
+              <button id="uploadFileBtn" style="margin-top: 10px; display: none;" onclick="uploadFile()">Upload File</button>
+              <div id="file-upload-result"></div>
+            </div>
+
+            <hr style="margin: 30px 0; border: none; border-top: 1px solid #e5e7eb;">
+
+            <!-- Text Upload Section -->
+            <div class="upload-section">
+              <h3 style="margin-bottom: 10px;">Or Paste Text</h3>
+              <input type="text" id="doc-title" placeholder="Document title (e.g., 'Product Information', 'FAQ')" />
+              <textarea id="doc-content" rows="12" placeholder="Paste your content here...
 
 Examples:
 - Company information
@@ -83,8 +114,9 @@ Examples:
 - Pricing details
 - FAQ
 - Contact information"></textarea>
-            <button onclick="uploadDocument()">Upload Content</button>
-            <div id="upload-result"></div>
+              <button onclick="uploadDocument()">Upload Text</button>
+              <div id="upload-result"></div>
+            </div>
           </div>
 
           <!-- Documents Tab -->
@@ -115,6 +147,87 @@ Examples:
       <script>
         const customerId = ${customerId};
         let embedCode = '';
+        let selectedFile = null;
+
+        // File upload drag and drop
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const fileInfo = document.getElementById('file-info');
+        const uploadFileBtn = document.getElementById('uploadFileBtn');
+
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        dropZone.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          dropZone.classList.add('drag-over');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+          dropZone.classList.remove('drag-over');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+          e.preventDefault();
+          dropZone.classList.remove('drag-over');
+          
+          const files = e.dataTransfer.files;
+          if (files.length > 0) {
+            handleFileSelect(files[0]);
+          }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+          if (e.target.files.length > 0) {
+            handleFileSelect(e.target.files[0]);
+          }
+        });
+
+        function handleFileSelect(file) {
+          selectedFile = file;
+          fileInfo.style.display = 'block';
+          uploadFileBtn.style.display = 'block';
+          fileInfo.innerHTML = \`
+            <strong>Selected file:</strong> \${file.name}<br>
+            <strong>Size:</strong> \${(file.size / 1024 / 1024).toFixed(2)} MB<br>
+            <strong>Type:</strong> \${file.type}
+          \`;
+        }
+
+        async function uploadFile() {
+          if (!selectedFile) return;
+
+          const result = document.getElementById('file-upload-result');
+          result.innerHTML = '<div style="color: #6b7280; margin-top: 10px;">Uploading and processing file...</div>';
+          uploadFileBtn.disabled = true;
+
+          try {
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+            formData.append('customerId', customerId);
+
+            const response = await fetch('/api/content/upload', {
+              method: 'POST',
+              body: formData
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+              result.innerHTML = '<div class="success">✓ File uploaded! ' + data.chunksStored + ' chunks stored.</div>';
+              selectedFile = null;
+              fileInput.value = '';
+              fileInfo.style.display = 'none';
+              uploadFileBtn.style.display = 'none';
+              loadStats();
+            } else {
+              result.innerHTML = '<div class="error">Error: ' + (data.error || 'Upload failed') + '</div>';
+            }
+          } catch (error) {
+            result.innerHTML = '<div class="error">Error: ' + error.message + '</div>';
+          } finally {
+            uploadFileBtn.disabled = false;
+          }
+        }
 
         // Switch tabs
         function switchTab(tabName) {
@@ -128,14 +241,14 @@ Examples:
           if (tabName === 'leads') loadLeads();
         }
 
-        // Upload document
+        // Upload text document
         async function uploadDocument() {
           const title = document.getElementById('doc-title').value;
           const content = document.getElementById('doc-content').value;
           const result = document.getElementById('upload-result');
 
           if (!content.trim()) {
-            result.innerHTML = '<div style="color: #ef4444; margin-top: 10px;">Please enter some content</div>';
+            result.innerHTML = '<div class="error">Please enter some content</div>';
             return;
           }
 
@@ -160,10 +273,10 @@ Examples:
               document.getElementById('doc-content').value = '';
               loadStats();
             } else {
-              result.innerHTML = '<div style="color: #ef4444; margin-top: 10px;">Error: ' + data.error + '</div>';
+              result.innerHTML = '<div class="error">Error: ' + data.error + '</div>';
             }
           } catch (error) {
-            result.innerHTML = '<div style="color: #ef4444; margin-top: 10px;">Error: ' + error.message + '</div>';
+            result.innerHTML = '<div class="error">Error: ' + error.message + '</div>';
           }
         }
 
@@ -185,13 +298,13 @@ Examples:
               <li class="doc-item">
                 <div>
                   <strong>\${doc.title}</strong>
-                  <div class="doc-meta">\${new Date(doc.created_at).toLocaleDateString()}</div>
+                  <div class="doc-meta">\${doc.content_type} • \${new Date(doc.created_at).toLocaleDateString()}</div>
                 </div>
                 <button class="delete-btn" onclick="deleteDocument(\${doc.id})">Delete</button>
               </li>
             \`).join('');
           } catch (error) {
-            list.innerHTML = '<li style="color: #ef4444;">Error loading documents</li>';
+            list.innerHTML = '<li class="error">Error loading documents</li>';
           }
         }
 
@@ -230,7 +343,7 @@ Examples:
               </div>
             \`).join('');
           } catch (error) {
-            container.innerHTML = '<div style="color: #ef4444;">Error loading leads</div>';
+            container.innerHTML = '<div class="error">Error loading leads</div>';
           }
         }
 
@@ -240,17 +353,14 @@ Examples:
             const response = await fetch('/api/customers/' + customerId);
             const data = await response.json();
             
-            // Get document count
             const docsResponse = await fetch('/api/content/' + customerId);
             const docsData = await docsResponse.json();
             document.getElementById('doc-count').textContent = docsData.documents.length;
             
-            // Get leads count
             const leadsResponse = await fetch('/api/customers/' + customerId + '/leads');
             const leadsData = await leadsResponse.json();
             document.getElementById('lead-count').textContent = leadsData.leads.length;
             
-            // Set embed code
             embedCode = data.customer.embedCode;
             document.getElementById('embed-code').textContent = embedCode;
           } catch (error) {
