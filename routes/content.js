@@ -189,23 +189,6 @@ router.post('/website', async (req, res) => {
   }
 });
 
-    res.json({
-      success: true,
-      message: 'Website content scraped successfully',
-      title: pageData.title,
-      wordCount: pageData.wordCount,
-      ...result
-    });
-
-  } catch (error) {
-    console.error('Error scraping website:', error);
-    res.status(500).json({ 
-      error: 'Failed to scrape website',
-      details: error.message 
-    });
-  }
-});
-
 // POST /api/content/youtube - Extract YouTube video transcript
 router.post('/youtube', async (req, res) => {
   try {
