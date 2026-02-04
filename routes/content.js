@@ -198,16 +198,47 @@ router.post('/youtube', async (req, res) => {
       return res.status(400).json({ error: 'customerId and videoUrl are required' });
     }
 
-    // TODO: Implement YouTube transcript extraction (next step)
+    console.log(`[YouTube] Customer ${customerId} | URL: ${videoUrl}`);
+
+    // Import YouTube transcript service
+    const { getYoutubeTranscript, getVideoMetadata } = await import('../services/youtubeTranscript.js');
+
+    // Extract transcript
+    const transcriptData = await getYoutubeTranscript(videoUrl);
+    const metadata = await getVideoMetadata(transcriptData.videoId);
+
+    // Store transcript as document
+    const result = await storeDocument({
+      customerId: parseInt(customerId),
+      title: `YouTube Video: ${transcriptData.videoId}`,
+      contentType: 'youtube',
+      sourceUrl: metadata.url,
+      content: transcriptData.text,
+      metadata: {
+        extractedAt: new Date().toISOString(),
+        videoId: transcriptData.videoId,
+        wordCount: transcriptData.wordCount,
+        duration: transcriptData.duration,
+        thumbnail: metadata.thumbnail
+      }
+    });
+
+    console.log(`[YouTube] Transcript stored: ${transcriptData.wordCount} words, ${result.chunksStored} chunks`);
+
     res.json({
-      success: false,
-      message: 'YouTube transcript extraction coming soon',
-      note: 'Will be implemented next'
+      success: true,
+      message: 'YouTube transcript extracted successfully',
+      videoId: transcriptData.videoId,
+      wordCount: transcriptData.wordCount,
+      chunksStored: result.chunksStored
     });
 
   } catch (error) {
-    console.error('Error extracting YouTube transcript:', error);
-    res.status(500).json({ error: 'Failed to extract transcript' });
+    console.error('[YouTube] Error:', error);
+    res.status(500).json({ 
+      error: 'Failed to extract YouTube transcript',
+      details: error.message 
+    });
   }
 });
 
