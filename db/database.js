@@ -41,8 +41,8 @@ export async function initializeDatabase() {
   try {
     console.log('Initializing database schema...');
     
-    // Enable pgvector extension
-    await query('CREATE EXTENSION IF NOT EXISTS vector');
+    // Skip pgvector for now - use keyword search instead
+    // await query('CREATE EXTENSION IF NOT EXISTS vector');
     
     // Create customers table
     await query(`
@@ -55,6 +55,56 @@ export async function initializeDatabase() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    
+    // Create documents table
+    await query(`
+      CREATE TABLE IF NOT EXISTS documents (
+        id SERIAL PRIMARY KEY,
+        customer_id INTEGER REFERENCES customers(id) ON DELETE CASCADE,
+        title VARCHAR(500),
+        content_type VARCHAR(50),
+        source_url TEXT,
+        content TEXT,
+        metadata JSONB,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    
+    // Create embeddings table (without vector type for now)
+    await query(`
+      CREATE TABLE IF NOT EXISTS embeddings (
+        id SERIAL PRIMARY KEY,
+        customer_id INTEGER REFERENCES customers(id) ON DELETE CASCADE,
+        document_id INTEGER REFERENCES documents(id) ON DELETE CASCADE,
+        chunk_text TEXT NOT NULL,
+        metadata JSONB,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    
+    // Create leads table
+    await query(`
+      CREATE TABLE IF NOT EXISTS leads (
+        id SERIAL PRIMARY KEY,
+        customer_id INTEGER REFERENCES customers(id) ON DELETE CASCADE,
+        name VARCHAR(255) NOT NULL,
+        email VARCHAR(255) NOT NULL,
+        conversation JSONB,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    
+    // Create indexes (skip vector index)
+    await query('CREATE INDEX IF NOT EXISTS embeddings_customer_idx ON embeddings(customer_id)');
+    await query('CREATE INDEX IF NOT EXISTS documents_customer_idx ON documents(customer_id)');
+    await query('CREATE INDEX IF NOT EXISTS leads_customer_idx ON leads(customer_id)');
+    
+    console.log('✓ Database schema initialized successfully (using keyword search)');
+  } catch (error) {
+    console.error('Failed to initialize database:', error);
+    throw error;
+  }
+}
     
     // Create documents table
     await query(`
