@@ -34,7 +34,7 @@ router.get('/:customerId', async (req, res) => {
     
     // Get customer info
     const customerResult = await query(
-      'SELECT name, email FROM customers WHERE id = $1',
+      'SELECT name, email, bot_instructions FROM customers WHERE id = $1',
       [customerId]
     );
     
@@ -43,6 +43,7 @@ router.get('/:customerId', async (req, res) => {
     }
     
     const customer = customerResult.rows[0];
+    const botInstructions = customer.bot_instructions || '';
     
     // Get document count
     const docCountResult = await query(
@@ -409,6 +410,21 @@ router.get('/:customerId', async (req, res) => {
                 <textarea id="qaAnswer" placeholder="We're open Monday-Friday, 9am-5pm EST."></textarea>
               </div>
               <button onclick="handleQAUpload()">Add Q&A Pair</button>
+              
+              <h3 style="margin: 30px 0 15px;">Configure Bot Behavior</h3>
+              <p style="color: #6b7280; margin-bottom: 15px;">Set instructions for how your chatbot should respond - its tone, personality, who it represents, and any specific guidelines.</p>
+              <div class="form-group">
+                <label for="botInstructions">Bot Instructions</label>
+                <textarea id="botInstructions" style="min-height: 200px;" placeholder="Example:
+You are a friendly customer support assistant for XYZ Company.
+
+- Always be professional but warm
+- Answer questions about our products and services
+- If you don't know something, direct them to contact us at support@xyz.com
+- Use a helpful, conversational tone
+- Keep responses concise (2-3 paragraphs max)">${botInstructions}</textarea>
+              </div>
+              <button onclick="handleBotInstructionsUpdate()">Save Bot Instructions</button>
             </div>
             
             <!-- My Documents Tab -->
@@ -669,6 +685,35 @@ router.get('/:customerId', async (req, res) => {
                 document.getElementById('qaAnswer').value = '';
               } else {
                 showError(data.error || 'Failed to add Q&A pair');
+              }
+            } catch (error) {
+              showError('Network error. Please try again.');
+            }
+          }
+          
+          async function handleBotInstructionsUpdate() {
+            const instructions = document.getElementById('botInstructions').value;
+            
+            if (!instructions) {
+              showError('Please enter bot instructions');
+              return;
+            }
+            
+            try {
+              const response = await fetch('/api/customer/instructions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  customerId: '${customerId}',
+                  instructions: instructions
+                })
+              });
+              const data = await response.json();
+              
+              if (response.ok) {
+                showSuccess('Bot instructions updated successfully!');
+              } else {
+                showError(data.error || 'Failed to update instructions');
               }
             } catch (error) {
               showError('Network error. Please try again.');
