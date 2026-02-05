@@ -59,11 +59,11 @@ router.get('/:customerId', async (req, res) => {
     );
     const leadCount = parseInt(leadCountResult.rows[0].count);
     
-    // Get recent documents
+    // Get recent documents (non Q&A)
     const documentsResult = await query(
       `SELECT id, title, content_type, created_at 
        FROM documents 
-       WHERE customer_id = $1 
+       WHERE customer_id = $1 AND (title NOT LIKE 'Q&A:%' OR title IS NULL)
        ORDER BY created_at DESC 
        LIMIT 10`,
       [customerId]
@@ -73,6 +73,22 @@ router.get('/:customerId', async (req, res) => {
       id: doc.id,
       title: doc.title || 'Untitled',
       type: doc.content_type,
+      date: new Date(doc.created_at).toLocaleDateString()
+    }));
+    
+    // Get Q&A pairs specifically
+    const qaPairsResult = await query(
+      `SELECT id, title, content, created_at 
+       FROM documents 
+       WHERE customer_id = $1 AND title LIKE 'Q&A:%'
+       ORDER BY created_at DESC`,
+      [customerId]
+    );
+    
+    const qaPairs = qaPairsResult.rows.map(doc => ({
+      id: doc.id,
+      title: doc.title.replace('Q&A: ', ''),
+      content: doc.content,
       date: new Date(doc.created_at).toLocaleDateString()
     }));
     
@@ -148,11 +164,12 @@ router.get('/:customerId', async (req, res) => {
           .tab-buttons {
             display: flex;
             border-bottom: 1px solid #e5e7eb;
+            overflow-x: auto;
           }
           
           .tab-button {
-            flex: 1;
-            padding: 15px;
+            flex: 0 0 auto;
+            padding: 15px 20px;
             background: none;
             border: none;
             cursor: pointer;
@@ -161,6 +178,7 @@ router.get('/:customerId', async (req, res) => {
             color: #6b7280;
             border-bottom: 2px solid transparent;
             transition: all 0.2s;
+            white-space: nowrap;
           }
           
           .tab-button:hover { background: #f9fafb; }
@@ -242,6 +260,28 @@ router.get('/:customerId', async (req, res) => {
           
           .document-title { font-weight: 500; color: #1f2937; }
           .document-meta { font-size: 13px; color: #6b7280; margin-top: 4px; }
+          
+          .qa-item {
+            padding: 20px;
+            border-bottom: 1px solid #e5e7eb;
+            background: #f9fafb;
+            margin-bottom: 10px;
+            border-radius: 8px;
+          }
+          
+          .qa-question {
+            font-weight: 600;
+            color: #667eea;
+            font-size: 16px;
+            margin-bottom: 12px;
+          }
+          
+          .qa-answer {
+            color: #1f2937;
+            line-height: 1.6;
+            padding-left: 20px;
+            margin-bottom: 12px;
+          }
           
           /* Download Buttons Styling */
           .download-buttons {
@@ -344,6 +384,7 @@ router.get('/:customerId', async (req, res) => {
             <div class="tab-buttons">
               <button class="tab-button active" onclick="switchTab('upload')">Upload Content</button>
               <button class="tab-button" onclick="switchTab('documents')">My Documents</button>
+              <button class="tab-button" onclick="switchTab('qa')">Q&A Pairs</button>
               <button class="tab-button" onclick="switchTab('leads')">Leads</button>
               <button class="tab-button" onclick="switchTab('embed')">Embed Code</button>
             </div>
@@ -448,6 +489,36 @@ You are a friendly customer support assistant for XYZ Company.
                   `).join('')}
                 </ul>
               ` : '<p style="color: #6b7280;">No documents yet. Upload some content to get started!</p>'}
+            </div>
+            
+            <!-- Q&A Pairs Tab -->
+            <div id="qa-tab" class="tab-content">
+              <h2 style="margin-bottom: 20px;">Q&A Training Pairs</h2>
+              ${qaPairs.length > 0 ? `
+                <div style="max-height: 600px; overflow-y: auto;">
+                  ${qaPairs.map(qa => {
+                    const lines = qa.content.split('\n').filter(l => l.trim());
+                    const question = lines[0]?.replace('Q: ', '') || '';
+                    const answer = lines.find(l => l.startsWith('A: '))?.replace('A: ', '') || '';
+                    
+                    return `
+                      <div class="qa-item">
+                        <div class="qa-question">Q: ${question}</div>
+                        <div class="qa-answer">A: ${answer}</div>
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                          <div class="document-meta">${qa.date}</div>
+                          <div class="download-buttons">
+                            <button class="download-btn pdf" onclick="downloadDocument(${qa.id}, 'pdf')">PDF</button>
+                            <button class="download-btn word" onclick="downloadDocument(${qa.id}, 'docx')">Word</button>
+                            <button class="download-btn csv" onclick="downloadDocument(${qa.id}, 'csv')">CSV</button>
+                            <button class="download-btn youtube" onclick="downloadDocument(${qa.id}, 'txt')">TXT</button>
+                          </div>
+                        </div>
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+              ` : '<p style="color: #6b7280;">No Q&A pairs yet. Add some in the Upload Content tab!</p>'}
             </div>
             
             <!-- Leads Tab -->
