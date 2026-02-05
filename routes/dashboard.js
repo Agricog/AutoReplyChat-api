@@ -1,5 +1,6 @@
 import express from 'express';
 import { query } from '../db/database.js';
+
 const router = express.Router();
 
 // GET /api/dashboard/:customerId
@@ -396,6 +397,18 @@ router.get('/:customerId', async (req, res) => {
 - Contact information"></textarea>
               </div>
               <button onclick="handleTextUpload()">Upload Text</button>
+              
+              <h3 style="margin: 30px 0 15px;">Train with Q&A Pairs</h3>
+              <p style="color: #6b7280; margin-bottom: 15px;">Add specific question-answer pairs to train your chatbot on exact responses.</p>
+              <div class="form-group">
+                <label for="qaQuestion">Question</label>
+                <input type="text" id="qaQuestion" placeholder="e.g., What are your business hours?" />
+              </div>
+              <div class="form-group">
+                <label for="qaAnswer">Answer</label>
+                <textarea id="qaAnswer" placeholder="We're open Monday-Friday, 9am-5pm EST."></textarea>
+              </div>
+              <button onclick="handleQAUpload()">Add Q&A Pair</button>
             </div>
             
             <!-- My Documents Tab -->
@@ -446,7 +459,7 @@ router.get('/:customerId', async (req, res) => {
 &lt;script&gt;
   (function() {
     var script = document.createElement('script');
-    script.src = 'https://autoreplychat.com/widget.js';
+    script.src = 'https://autoreplychat.com/embed.js';
     script.setAttribute('data-customer-id', '${customerId}');
     document.body.appendChild(script);
   })();
@@ -620,6 +633,42 @@ router.get('/:customerId', async (req, res) => {
                 document.getElementById('textContent').value = '';
               } else {
                 showError(data.error || 'Upload failed');
+              }
+            } catch (error) {
+              showError('Network error. Please try again.');
+            }
+          }
+          
+          async function handleQAUpload() {
+            const question = document.getElementById('qaQuestion').value;
+            const answer = document.getElementById('qaAnswer').value;
+            
+            if (!question || !answer) {
+              showError('Please fill in both question and answer');
+              return;
+            }
+            
+            const content = \`Q: \${question}\\n\\nA: \${answer}\`;
+            const title = \`Q&A: \${question.substring(0, 50)}\${question.length > 50 ? '...' : ''}\`;
+            
+            try {
+              const response = await fetch('/api/content/text', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  customerId: '${customerId}',
+                  title: title,
+                  content: content
+                })
+              });
+              const data = await response.json();
+              
+              if (response.ok) {
+                showSuccess('Q&A pair added successfully!');
+                document.getElementById('qaQuestion').value = '';
+                document.getElementById('qaAnswer').value = '';
+              } else {
+                showError(data.error || 'Failed to add Q&A pair');
               }
             } catch (error) {
               showError('Network error. Please try again.');
