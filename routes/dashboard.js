@@ -365,7 +365,13 @@ router.get('/:customerId', async (req, res) => {
       <body>
         <div class="header">
           <h1>🤖 Auto Reply Chat Dashboard</h1>
-          <p>Welcome back, ${customer.name}!</p>
+          <p style="display: flex; justify-content: space-between; align-items: center;">
+            <span>Welcome back, ${customer.name}!</span>
+            <button onclick="fetch('/api/auth/logout', {method:'POST'}).then(()=>window.location='/login')" 
+              style="background: rgba(255,255,255,0.2); padding: 8px 16px; border-radius: 6px; font-size: 13px; border: 1px solid rgba(255,255,255,0.3);">
+              Logout
+            </button>
+          </p>
         </div>
         
         <div class="container">
