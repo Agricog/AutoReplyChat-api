@@ -2,9 +2,9 @@ import express from 'express';
 import Anthropic from '@anthropic-ai/sdk';
 import { sendLeadNotification } from '../services/email.js';
 import { retrieveContext, storeLead, getCustomer } from '../services/rag.js';
+import { query } from '../db/database.js';
 
 const router = express.Router();
-
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
@@ -18,11 +18,18 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Message is required' });
     }
 
+    // Get customer's bot instructions
+    const customerResult = await query(
+      'SELECT bot_instructions FROM customers WHERE id = $1',
+      [customerId || 1]
+    );
+    const botInstructions = customerResult.rows[0]?.bot_instructions || '';
+
     // Retrieve relevant context from customer's knowledge base
     const context = await retrieveContext(customerId || 1, message, 5);
     
-    // Build system prompt with context
-    let systemPrompt = 'You are a helpful assistant.';
+    // Build system prompt with bot instructions and context
+    let systemPrompt = botInstructions || 'You are a helpful assistant.';
     
     if (context && context.length > 0) {
       systemPrompt += '\n\nRelevant information from the knowledge base:\n\n';
