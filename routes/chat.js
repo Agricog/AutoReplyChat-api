@@ -10,7 +10,7 @@ const anthropic = new Anthropic({
 });
 
 // POST /api/chat - Handle chat messages with RAG
-router.post('/chat', async (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const { message, customerId, conversationHistory } = req.body;
 
