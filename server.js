@@ -10,6 +10,7 @@ import chatRoutes from './routes/chat.js';
 import contentRoutes from './routes/content.js';
 import customersRoutes from './routes/customers.js';
 import dashboardRoutes from './routes/dashboard.js';
+import documentRoutes from './routes/documents.js';
 import adminRoutes from './routes/admin.js';
 import authRoutes from './routes/auth.js';
 import loginRoute from './routes/login.js';
@@ -97,6 +98,7 @@ app.use('/api/chat', chatRoutes);
 app.use('/api/content', requireAuth, contentRoutes);
 app.use('/api/customers', requireAuth, customersRoutes);
 app.use('/api/dashboard', requireAuth, dashboardRoutes);
+app.use('/api/documents', documentRoutes);
 
 // Admin routes (no auth for now)
 app.use('/api/admin', adminRoutes);
