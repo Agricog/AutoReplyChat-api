@@ -5,6 +5,7 @@ import { retrieveContext, storeLead, getCustomer } from '../services/rag.js';
 import { query } from '../db/database.js';
 
 const router = express.Router();
+
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
@@ -12,21 +13,29 @@ const anthropic = new Anthropic({
 // POST /api/chat - Handle chat messages with RAG
 router.post('/', async (req, res) => {
   try {
-    const { message, customerId, conversationHistory } = req.body;
-
+    const { message, customerId, conversationHistory, leadId } = req.body;
+    
     if (!message) {
       return res.status(400).json({ error: 'Message is required' });
     }
 
+    const cid = customerId || 1;
+
+    // Save user message to database
+    await query(
+      'INSERT INTO messages (customer_id, lead_id, role, content) VALUES ($1, $2, $3, $4)',
+      [cid, leadId || null, 'user', message]
+    );
+
     // Get customer's bot instructions
     const customerResult = await query(
       'SELECT bot_instructions FROM customers WHERE id = $1',
-      [customerId || 1]
+      [cid]
     );
     const botInstructions = customerResult.rows[0]?.bot_instructions || '';
 
     // Retrieve relevant context from customer's knowledge base
-    const context = await retrieveContext(customerId || 1, message, 5);
+    const context = await retrieveContext(cid, message, 5);
     
     // Build system prompt with bot instructions and context
     let systemPrompt = botInstructions || 'You are a helpful assistant.';
@@ -54,12 +63,17 @@ router.post('/', async (req, res) => {
 
     const assistantMessage = response.content[0].text;
 
+    // Save assistant response to database
+    await query(
+      'INSERT INTO messages (customer_id, lead_id, role, content) VALUES ($1, $2, $3, $4)',
+      [cid, leadId || null, 'assistant', assistantMessage]
+    );
+
     res.json({
       message: assistantMessage,
-      conversationId: customerId || 'default',
+      conversationId: cid,
       contextUsed: context.length > 0
     });
-
   } catch (error) {
     console.error('Claude API error:', error);
     res.status(500).json({ 
@@ -73,7 +87,7 @@ router.post('/', async (req, res) => {
 router.post('/lead', async (req, res) => {
   try {
     const { name, email, customerId, conversation } = req.body;
-
+    
     if (!name || !email) {
       return res.status(400).json({ error: 'Name and email are required' });
     }
@@ -111,7 +125,6 @@ router.post('/lead', async (req, res) => {
       leadId,
       emailSent: emailResult.success
     });
-
   } catch (error) {
     console.error('Lead capture error:', error);
     res.status(500).json({ 
