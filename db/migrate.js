@@ -2,7 +2,7 @@ import { query } from './database.js';
 
 export async function runMigrations() {
   console.log('[Migration] Checking database schema...');
-
+  
   try {
     // Create customers_auth table
     await query(`
@@ -19,10 +19,10 @@ export async function runMigrations() {
         locked_until TIMESTAMP
       )
     `);
-
+    
     await query(`CREATE INDEX IF NOT EXISTS idx_customers_auth_email ON customers_auth(email)`);
     await query(`CREATE INDEX IF NOT EXISTS idx_customers_auth_customer_id ON customers_auth(customer_id)`);
-
+    
     // Create sessions table
     await query(`
       CREATE TABLE IF NOT EXISTS sessions (
@@ -31,9 +31,15 @@ export async function runMigrations() {
         expire TIMESTAMP NOT NULL
       )
     `);
-
+    
     await query(`CREATE INDEX IF NOT EXISTS idx_sessions_expire ON sessions(expire)`);
-
+    
+    // Add bot_instructions column to customers table
+    await query(`
+      ALTER TABLE customers 
+      ADD COLUMN IF NOT EXISTS bot_instructions TEXT
+    `);
+    
     // Insert test account if doesn't exist
     await query(`
       INSERT INTO customers_auth (customer_id, email, password_hash)
@@ -44,7 +50,7 @@ export async function runMigrations() {
       )
       ON CONFLICT (customer_id) DO NOTHING
     `);
-
+    
     console.log('[Migration] ✓ Database schema up to date');
   } catch (error) {
     console.error('[Migration] Error:', error);
