@@ -48,7 +48,7 @@ router.get('/:customerId', async (req, res) => {
     
     // Get all bots for this customer
     const botsResult = await query(
-      'SELECT id, name, bot_instructions, greeting_message, header_title, header_color, text_color, created_at FROM bots WHERE customer_id = $1 ORDER BY created_at ASC',
+      'SELECT id, name, bot_instructions, greeting_message, header_title, header_color, text_color, lead_capture_enabled, created_at FROM bots WHERE customer_id = $1 ORDER BY created_at ASC',
       [customerId]
     );
     
@@ -76,6 +76,7 @@ router.get('/:customerId', async (req, res) => {
     const headerTitle = currentBot.header_title || 'Support Assistant';
     const headerColor = currentBot.header_color || '#3b82f6';
     const textColor = currentBot.text_color || '#ffffff';
+    const leadCaptureEnabled = currentBot.lead_capture_enabled !== false;
     
     // Get document count for current bot
     const docCountResult = await query(
@@ -1262,6 +1263,24 @@ router.get('/:customerId', async (req, res) => {
                   <button class="btn btn-primary" onclick="handleGreetingUpdate()">Save Greeting</button>
                 </div>
               </div>
+              
+              <div class="content-card">
+                <div class="content-card-header">
+                  <h3>Lead Capture</h3>
+                </div>
+                <div class="content-card-body">
+                  <div class="form-group">
+                    <label class="form-label">Collect Visitor Information</label>
+                    <div style="display: flex; align-items: center; gap: 12px; margin-top: 8px;">
+                      <label style="display: flex; align-items: center; cursor: pointer;">
+                        <input type="checkbox" id="leadCaptureEnabled" ${leadCaptureEnabled ? 'checked' : ''} onchange="handleLeadCaptureToggle()" style="width: 20px; height: 20px; cursor: pointer;" />
+                        <span style="margin-left: 8px; font-weight: 500;">Enable lead capture form</span>
+                      </label>
+                    </div>
+                    <div class="form-help">When enabled, visitors are asked for their name and email after the first message exchange.</div>
+                  </div>
+                </div>
+              </div>
             </div>
             
             <!-- Appearance Tab -->
@@ -1655,6 +1674,22 @@ router.get('/:customerId', async (req, res) => {
                 body: JSON.stringify({ customerId, greeting })
               });
               if (response.ok) showSuccess('Greeting saved!');
+              else showError('Failed to save');
+            } catch (error) {
+              showError('Network error');
+            }
+          }
+          
+          async function handleLeadCaptureToggle() {
+            const enabled = document.getElementById('leadCaptureEnabled').checked;
+            
+            try {
+              const response = await fetch('/api/bots/' + botId + '/lead-capture', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ customerId, enabled })
+              });
+              if (response.ok) showSuccess(enabled ? 'Lead capture enabled!' : 'Lead capture disabled!');
               else showError('Failed to save');
             } catch (error) {
               showError('Network error');
