@@ -1,5 +1,6 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import validator from 'validator';
 import { query } from '../db/database.js';
 import { loginLimiter, signupLimiter } from '../middleware/auth.js';
@@ -87,6 +88,14 @@ router.post('/signup', signupLimiter, async (req, res) => {
       `INSERT INTO customers_auth (customer_id, email, password_hash)
        VALUES ($1, $2, $3)`,
       [customerId, email.toLowerCase(), passwordHash]
+    );
+
+    // Create first bot for new customer
+    const botPublicId = crypto.randomBytes(12).toString('hex');
+    await query(
+      `INSERT INTO bots (customer_id, name, public_id, bot_instructions)
+       VALUES ($1, $2, $3, 'You are a helpful assistant.')`,
+      [customerId, 'My First Bot', botPublicId]
     );
 
     // Create session
