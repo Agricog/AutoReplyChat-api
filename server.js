@@ -95,7 +95,7 @@ app.get('/api/bots/:botId/settings', async (req, res) => {
     const botId = parseInt(req.params.botId);
     
     const result = await query(
-      `SELECT id, name, greeting_message, header_title, header_color, text_color 
+      `SELECT id, name, greeting_message, header_title, header_color, text_color, lead_capture_enabled 
        FROM bots WHERE id = $1`,
       [botId]
     );
@@ -111,7 +111,8 @@ app.get('/api/bots/:botId/settings', async (req, res) => {
       greetingMessage: bot.greeting_message || 'Thank you for visiting! How may we assist you today?',
       headerTitle: bot.header_title || 'Support Assistant',
       headerColor: bot.header_color || '#3b82f6',
-      textColor: bot.text_color || '#ffffff'
+      textColor: bot.text_color || '#ffffff',
+      leadCaptureEnabled: bot.lead_capture_enabled !== false
     });
   } catch (error) {
     console.error('Get bot settings error:', error);
