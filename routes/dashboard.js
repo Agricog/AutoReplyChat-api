@@ -89,7 +89,7 @@ router.get('/:customerId', async (req, res) => {
     const userMessageBg = currentBot.user_message_bg || '#3b82f6';
     const botMessageBg = currentBot.bot_message_bg || '#f3f4f6';
     const sendButtonBg = currentBot.send_button_bg || '#3b82f6';
-    const leadFormMessage = currentBot.lead_form_message || "Want personalized help? Leave your details and we'll follow up";
+    const leadFormMessage = currentBot.lead_form_message || 'Want personalized help? Leave your details and we\\'ll follow up';
     
     // Get document count for current bot
     const docCountResult = await query(
@@ -1517,15 +1517,8 @@ router.get('/:customerId', async (req, res) => {
               
               <div class="embed-section">
                 <h4>📜 Website Script</h4>
-                <p>Add this code before the closing &lt;/body&gt; tag. The chatbot appears as a floating button.</p>
-                <div class="code-block">&lt;script&gt;
-  (function() {
-    var script = document.createElement('script');
-    script.src = 'https://autoreplychat.com/embed.js';
-    script.setAttribute('data-bot-id', '${botId}');
-    document.body.appendChild(script);
-  })();
-&lt;/script&gt;</div>
+                <p>Add this code to the header of your website to display the chatbot on all pages.</p>
+                <div class="code-block">&lt;script defer src="https://autoreplychat.com/embed.js" data-bot-id="${botId}"&gt;&lt;/script&gt;</div>
                 <button class="btn btn-secondary" style="margin-top: 12px;" onclick="copyEmbed('script')">Copy Code</button>
               </div>
               
@@ -1655,14 +1648,7 @@ router.get('/:customerId', async (req, res) => {
           function copyEmbed(type) {
             let text = '';
             if (type === 'script') {
-              text = \`<script>
-  (function() {
-    var script = document.createElement('script');
-    script.src = 'https://autoreplychat.com/embed.js';
-    script.setAttribute('data-bot-id', '${botId}');
-    document.body.appendChild(script);
-  })();
-<\\/script>\`;
+              text = \`<script defer src="https://autoreplychat.com/embed.js" data-bot-id="${botId}"><\\/script>\`;
             } else if (type === 'iframe') {
               text = \`<iframe src="https://autoreplychat.com/chat/${botId}" style="width: 400px; height: 600px; border: none; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);"></iframe>\`;
             }
