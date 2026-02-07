@@ -42,14 +42,16 @@ router.post('/', async (req, res) => {
 // GET /api/bots/:botId/settings - Get bot settings (public, no auth needed for widget)
 router.get('/:botId/settings', async (req, res) => {
   try {
-    const botId = parseInt(req.params.botId);
+    const botIdParam = req.params.botId;
     
+    // Support both numeric ID and public_id
+    const isNumeric = /^\d+$/.test(botIdParam);
     const result = await query(
-      `SELECT id, name, greeting_message, header_title, header_color, text_color, lead_capture_enabled,
+      `SELECT id, public_id, name, greeting_message, header_title, header_color, text_color, lead_capture_enabled,
               chat_bubble_bg, avatar_bg, button_style, button_position, button_size, bar_message,
               chat_window_bg, user_message_bg, bot_message_bg, send_button_bg, lead_form_message
-       FROM bots WHERE id = $1`,
-      [botId]
+       FROM bots WHERE ${isNumeric ? 'id = $1' : 'public_id = $1'}`,
+      [isNumeric ? parseInt(botIdParam) : botIdParam]
     );
     
     if (result.rows.length === 0) {
@@ -59,7 +61,7 @@ router.get('/:botId/settings', async (req, res) => {
     const bot = result.rows[0];
     
     res.json({
-      botId: bot.id,
+      botId: bot.public_id || bot.id,
       name: bot.name,
       greetingMessage: bot.greeting_message || 'Thank you for visiting! How may we assist you today?',
       headerTitle: bot.header_title || 'Support Assistant',
