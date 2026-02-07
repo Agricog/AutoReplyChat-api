@@ -80,6 +80,17 @@ export async function runMigrations() {
       ALTER TABLE customers 
       ADD COLUMN IF NOT EXISTS subscription_status VARCHAR(20) DEFAULT 'trial'
     `);
+
+    // Add Stripe columns to customers table
+    await query(`
+      ALTER TABLE customers 
+      ADD COLUMN IF NOT EXISTS stripe_customer_id VARCHAR(255)
+    `);
+
+    await query(`
+      ALTER TABLE customers 
+      ADD COLUMN IF NOT EXISTS stripe_subscription_id VARCHAR(255)
+    `);
     
     // Insert test account if doesn't exist
     await query(`
