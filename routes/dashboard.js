@@ -48,7 +48,7 @@ router.get('/:customerId', async (req, res) => {
     
     // Get all bots for this customer
     const botsResult = await query(
-      'SELECT id, name, bot_instructions, greeting_message, header_title, header_color, text_color, lead_capture_enabled, notification_emails, conversation_notifications, chat_bubble_bg, avatar_bg, button_style, button_position, button_size, bar_message, chat_window_bg, user_message_bg, bot_message_bg, send_button_bg, lead_form_message, created_at FROM bots WHERE customer_id = $1 ORDER BY created_at ASC',
+      'SELECT id, public_id, name, bot_instructions, greeting_message, header_title, header_color, text_color, lead_capture_enabled, notification_emails, conversation_notifications, chat_bubble_bg, avatar_bg, button_style, button_position, button_size, bar_message, chat_window_bg, user_message_bg, bot_message_bg, send_button_bg, lead_form_message, created_at FROM bots WHERE customer_id = $1 ORDER BY created_at ASC',
       [customerId]
     );
     
@@ -71,6 +71,7 @@ router.get('/:customerId', async (req, res) => {
       : bots[0];
     
     const botId = currentBot.id;
+    const publicId = currentBot.public_id;
     const botInstructions = currentBot.bot_instructions || '';
     const greetingMessage = currentBot.greeting_message || 'Thank you for visiting! How may we assist you today?';
     const headerTitle = currentBot.header_title || 'Support Assistant';
@@ -89,7 +90,7 @@ router.get('/:customerId', async (req, res) => {
     const userMessageBg = currentBot.user_message_bg || '#3b82f6';
     const botMessageBg = currentBot.bot_message_bg || '#f3f4f6';
     const sendButtonBg = currentBot.send_button_bg || '#3b82f6';
-    const leadFormMessage = currentBot.lead_form_message || 'Want personalized help? Leave your details and we\\'ll follow up';
+    const leadFormMessage = currentBot.lead_form_message || "Want personalized help? Leave your details and we'll follow up";
     
     // Get document count for current bot
     const docCountResult = await query(
@@ -1510,26 +1511,26 @@ router.get('/:customerId', async (req, res) => {
                 <h4>🔗 Direct Link</h4>
                 <p>Share this link to let users access your chatbot directly.</p>
                 <div class="copy-row">
-                  <input type="text" class="copy-input" readonly value="https://autoreplychat.com/chat/${botId}" onclick="this.select()" />
-                  <button class="btn btn-primary" onclick="copyToClipboard('https://autoreplychat.com/chat/${botId}')">Copy</button>
+                  <input type="text" class="copy-input" readonly value="https://autoreplychat.com/chat/${publicId}" onclick="this.select()" />
+                  <button class="btn btn-primary" onclick="copyToClipboard('https://autoreplychat.com/chat/${publicId}')">Copy</button>
                 </div>
               </div>
               
               <div class="embed-section">
                 <h4>📜 Website Script</h4>
                 <p>Add this code to the header of your website to display the chatbot on all pages.</p>
-                <div class="code-block">&lt;script defer src="https://autoreplychat.com/embed.js" data-bot-id="${botId}"&gt;&lt;/script&gt;</div>
+                <div class="code-block">&lt;script defer src="https://autoreplychat.com/embed.js" data-bot-id="${publicId}"&gt;&lt;/script&gt;</div>
                 <button class="btn btn-secondary" style="margin-top: 12px;" onclick="copyEmbed('script')">Copy Code</button>
               </div>
               
               <div class="embed-section">
                 <h4>🖼️ Iframe Embed</h4>
                 <p>Embed the chatbot directly into your page layout.</p>
-                <div class="code-block">&lt;iframe src="https://autoreplychat.com/chat/${botId}" style="width: 400px; height: 600px; border: none; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);"&gt;&lt;/iframe&gt;</div>
+                <div class="code-block">&lt;iframe src="https://autoreplychat.com/chat/${publicId}" style="width: 400px; height: 600px; border: none; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);"&gt;&lt;/iframe&gt;</div>
                 <button class="btn btn-secondary" style="margin-top: 12px;" onclick="copyEmbed('iframe')">Copy Code</button>
               </div>
               
-              <p style="color: #64748b; font-size: 13px; margin-top: 20px;">Bot ID: <strong>${botId}</strong></p>
+              <p style="color: #64748b; font-size: 13px; margin-top: 20px;">Bot ID: <strong>${publicId}</strong></p>
             </div>
           </div>
         </div>
@@ -1565,6 +1566,7 @@ router.get('/:customerId', async (req, res) => {
         <script>
           const customerId = '${customerId}';
           const botId = '${botId}';
+          const publicId = '${publicId}';
           let websiteMode = 'full';
           let activeTab = 'overview';
           
@@ -1648,9 +1650,9 @@ router.get('/:customerId', async (req, res) => {
           function copyEmbed(type) {
             let text = '';
             if (type === 'script') {
-              text = \`<script defer src="https://autoreplychat.com/embed.js" data-bot-id="${botId}"><\\/script>\`;
+              text = \`<script defer src="https://autoreplychat.com/embed.js" data-bot-id="\${publicId}"><\\/script>\`;
             } else if (type === 'iframe') {
-              text = \`<iframe src="https://autoreplychat.com/chat/${botId}" style="width: 400px; height: 600px; border: none; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);"></iframe>\`;
+              text = \`<iframe src="https://autoreplychat.com/chat/\${publicId}" style="width: 400px; height: 600px; border: none; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);"></iframe>\`;
             }
             navigator.clipboard.writeText(text).then(() => alert('Code copied!')).catch(() => alert('Failed to copy'));
           }
