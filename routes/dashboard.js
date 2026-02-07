@@ -478,6 +478,59 @@ router.get('/:customerId', async (req, res) => {
           .cancel-btn:hover {
             background: #4b5563;
           }
+          
+          .embed-section {
+            background: #f9fafb;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+          }
+          
+          .embed-section h3 {
+            margin-bottom: 10px;
+            font-size: 16px;
+          }
+          
+          .embed-section p {
+            color: #6b7280;
+            margin-bottom: 15px;
+            font-size: 14px;
+          }
+          
+          .embed-input-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+          }
+          
+          .embed-input-row input {
+            flex: 1;
+            padding: 12px;
+            font-family: monospace;
+            background: white;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+          }
+          
+          .embed-input-row button {
+            padding: 12px 20px;
+            white-space: nowrap;
+          }
+          
+          .embed-code {
+            font-family: monospace;
+            background: white;
+            padding: 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            width: 100%;
+            min-height: 100px;
+            resize: vertical;
+          }
+          
+          .copy-btn {
+            margin-top: 10px;
+          }
         </style>
       </head>
       <body>
@@ -531,7 +584,7 @@ router.get('/:customerId', async (req, res) => {
               <button class="tab-button" onclick="switchTab('qa')">Q&A Pairs</button>
               <button class="tab-button" onclick="switchTab('leads')">Leads</button>
               <button class="tab-button" onclick="switchTab('messages')">Messages</button>
-              <button class="tab-button" onclick="switchTab('embed')">Embed Code</button>
+              <button class="tab-button" onclick="switchTab('embed')">Deploy</button>
             </div>
             
             <!-- Upload Content Tab -->
@@ -718,12 +771,25 @@ You are a friendly customer support assistant for XYZ Company.
               ` : '<p style="color: #6b7280;">No messages yet.</p>'}
             </div>
             
-            <!-- Embed Code Tab -->
+            <!-- Deploy / Embed Code Tab -->
             <div id="embed-tab" class="tab-content">
-              <h2 style="margin-bottom: 20px;">Embed Your Chatbot</h2>
-              <p style="color: #6b7280; margin-bottom: 20px;">Copy this code and paste it before the closing &lt;/body&gt; tag on your website.</p>
-              <textarea readonly style="font-family: monospace; background: #f9fafb;" onclick="this.select()">
-&lt;script&gt;
+              <h2 style="margin-bottom: 20px;">Deploy "${currentBot.name}"</h2>
+              
+              <!-- Direct Link -->
+              <div class="embed-section">
+                <h3>🔗 Direct Link</h3>
+                <p>Share this link to let users access your chatbot directly.</p>
+                <div class="embed-input-row">
+                  <input type="text" readonly value="https://autoreplychat.com/chat/${botId}" onclick="this.select()" />
+                  <button onclick="copyToClipboard('https://autoreplychat.com/chat/${botId}')">Copy Link</button>
+                </div>
+              </div>
+              
+              <!-- Script Embed -->
+              <div class="embed-section">
+                <h3>📜 Add to Website (Script)</h3>
+                <p>Add this code before the closing &lt;/body&gt; tag. The chatbot will appear as a floating button.</p>
+                <textarea class="embed-code" readonly onclick="this.select()">&lt;script&gt;
   (function() {
     var script = document.createElement('script');
     script.src = 'https://autoreplychat.com/embed.js';
@@ -731,7 +797,18 @@ You are a friendly customer support assistant for XYZ Company.
     document.body.appendChild(script);
   })();
 &lt;/script&gt;</textarea>
-              <p style="color: #6b7280; margin-top: 15px; font-size: 13px;">Bot ID: <strong>${botId}</strong> (${currentBot.name})</p>
+                <button class="copy-btn" onclick="copyEmbed('script')">Copy Code</button>
+              </div>
+              
+              <!-- Iframe Embed -->
+              <div class="embed-section">
+                <h3>🖼️ Display Inside Webpage (Iframe)</h3>
+                <p>Embed the chatbot directly into your page layout. Adjust width and height as needed.</p>
+                <textarea class="embed-code" readonly onclick="this.select()" style="min-height: 80px;">&lt;iframe src="https://autoreplychat.com/chat/${botId}" style="width: 400px; height: 600px; border: none; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);"&gt;&lt;/iframe&gt;</textarea>
+                <button class="copy-btn" onclick="copyEmbed('iframe')">Copy Code</button>
+              </div>
+              
+              <p style="color: #6b7280; font-size: 13px;">Bot ID: <strong>${botId}</strong></p>
             </div>
           </div>
         </div>
@@ -860,6 +937,35 @@ You are a friendly customer support assistant for XYZ Company.
             el.textContent = message;
             el.style.display = 'block';
             setTimeout(() => el.style.display = 'none', 5000);
+          }
+          
+          function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+              alert('Copied to clipboard!');
+            }).catch(() => {
+              alert('Failed to copy');
+            });
+          }
+          
+          function copyEmbed(type) {
+            let text = '';
+            if (type === 'script') {
+              text = \`<script>
+  (function() {
+    var script = document.createElement('script');
+    script.src = 'https://autoreplychat.com/embed.js';
+    script.setAttribute('data-bot-id', '${botId}');
+    document.body.appendChild(script);
+  })();
+<\\/script>\`;
+            } else if (type === 'iframe') {
+              text = \`<iframe src="https://autoreplychat.com/chat/${botId}" style="width: 400px; height: 600px; border: none; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);"></iframe>\`;
+            }
+            navigator.clipboard.writeText(text).then(() => {
+              alert('Code copied to clipboard!');
+            }).catch(() => {
+              alert('Failed to copy');
+            });
           }
           
           async function downloadDocument(docId, format) {
