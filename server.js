@@ -16,6 +16,7 @@ import authRoutes from './routes/auth.js';
 import loginRoute from './routes/login.js';
 import signupRoute from './routes/signup.js';
 import botRoutes from './routes/bots.js';
+import { startConversationNotifier } from './services/conversationNotifier.js';
 
 // Import middleware
 import { requireAuth } from './middleware/auth.js';
@@ -158,3 +159,5 @@ app.listen(PORT, () => {
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔒 Session store: PostgreSQL`);
 });
+// Start conversation notifier
+startConversationNotifier();
