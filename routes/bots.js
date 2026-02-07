@@ -37,7 +37,7 @@ router.get('/:botId/settings', async (req, res) => {
     const botId = parseInt(req.params.botId);
     
     const result = await query(
-      `SELECT id, name, greeting_message, header_title, header_color, text_color 
+      `SELECT id, name, greeting_message, header_title, header_color, text_color, lead_capture_enabled 
        FROM bots WHERE id = $1`,
       [botId]
     );
@@ -54,7 +54,8 @@ router.get('/:botId/settings', async (req, res) => {
       greetingMessage: bot.greeting_message || 'Thank you for visiting! How may we assist you today?',
       headerTitle: bot.header_title || 'Support Assistant',
       headerColor: bot.header_color || '#3b82f6',
-      textColor: bot.text_color || '#ffffff'
+      textColor: bot.text_color || '#ffffff',
+      leadCaptureEnabled: bot.lead_capture_enabled !== false
     });
   } catch (error) {
     console.error('Get bot settings error:', error);
@@ -203,6 +204,39 @@ router.post('/:botId/appearance', async (req, res) => {
   } catch (error) {
     console.error('Update appearance error:', error);
     res.status(500).json({ error: 'Failed to update appearance' });
+  }
+});
+
+// POST /api/bots/:botId/lead-capture - Toggle lead capture
+router.post('/:botId/lead-capture', async (req, res) => {
+  try {
+    const botId = parseInt(req.params.botId);
+    const { customerId, enabled } = req.body;
+    
+    // Verify session
+    if (parseInt(customerId) !== req.session.customerId) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    
+    // Check bot belongs to customer
+    const botCheck = await query(
+      'SELECT id FROM bots WHERE id = $1 AND customer_id = $2',
+      [botId, customerId]
+    );
+    
+    if (botCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Bot not found' });
+    }
+    
+    await query(
+      'UPDATE bots SET lead_capture_enabled = $1 WHERE id = $2',
+      [enabled, botId]
+    );
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Update lead capture error:', error);
+    res.status(500).json({ error: 'Failed to update lead capture setting' });
   }
 });
 
