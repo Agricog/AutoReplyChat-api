@@ -8,7 +8,7 @@ const router = express.Router();
 // POST /api/content/upload - Upload files (PDF, Word, TXT, CSV, Excel)
 router.post('/upload', upload.array('files', 10), async (req, res) => {
   try {
-    const { customerId } = req.body;
+    const { customerId, botId } = req.body;
     const files = req.files;
 
     if (!customerId || !files || files.length === 0) {
@@ -26,6 +26,7 @@ router.post('/upload', upload.array('files', 10), async (req, res) => {
         // Store in database
         const result = await storeDocument({
           customerId: parseInt(customerId),
+          botId: botId ? parseInt(botId) : null,
           title: file.originalname,
           contentType: file.mimetype.includes('pdf') ? 'pdf' : 
                        file.mimetype.includes('word') ? 'docx' :
@@ -85,14 +86,15 @@ router.post('/upload', upload.array('files', 10), async (req, res) => {
 // POST /api/content/text - Upload plain text content
 router.post('/text', async (req, res) => {
   try {
-    const { customerId, title, content } = req.body;
+    const { customerId, botId, title, content } = req.body;
     
     if (!customerId || !content) {
       return res.status(400).json({ error: 'customerId and content are required' });
     }
 
     const result = await storeDocument({
-      customerId,
+      customerId: parseInt(customerId),
+      botId: botId ? parseInt(botId) : null,
       title: title || 'Text Document',
       contentType: 'text',
       sourceUrl: null,
@@ -114,7 +116,7 @@ router.post('/text', async (req, res) => {
 // POST /api/content/scrape-website - Scrape and store website content
 router.post('/scrape-website', async (req, res) => {
   try {
-    const { customerId, url, mode } = req.body;
+    const { customerId, botId, url, mode } = req.body;
     
     if (!customerId || !url) {
       return res.status(400).json({ error: 'customerId and url are required' });
@@ -130,7 +132,7 @@ router.post('/scrape-website', async (req, res) => {
       return res.status(400).json({ error: 'Invalid URL format' });
     }
 
-    console.log(`[Website Scrape] Customer ${customerId} | Mode: ${fullSite ? 'FULL SITE' : 'SINGLE PAGE'} | URL: ${validUrl.href}`);
+    console.log(`[Website Scrape] Customer ${customerId} | Bot ${botId} | Mode: ${fullSite ? 'FULL SITE' : 'SINGLE PAGE'} | URL: ${validUrl.href}`);
 
     // Import scraper
     const { scrapeWebpage, crawlWebsite } = await import('../services/webScraper.js');
@@ -150,6 +152,7 @@ router.post('/scrape-website', async (req, res) => {
       for (const pageData of pages) {
         const result = await storeDocument({
           customerId: parseInt(customerId),
+          botId: botId ? parseInt(botId) : null,
           title: pageData.title,
           contentType: 'website',
           sourceUrl: pageData.url,
@@ -181,6 +184,7 @@ router.post('/scrape-website', async (req, res) => {
       const pageData = await scrapeWebpage(validUrl.href);
       const result = await storeDocument({
         customerId: parseInt(customerId),
+        botId: botId ? parseInt(botId) : null,
         title: pageData.title,
         contentType: 'website',
         sourceUrl: pageData.url,
@@ -214,13 +218,13 @@ router.post('/scrape-website', async (req, res) => {
 // POST /api/content/youtube - Extract YouTube video transcript
 router.post('/youtube', async (req, res) => {
   try {
-    const { customerId, url } = req.body;
+    const { customerId, botId, url } = req.body;
     
     if (!customerId || !url) {
       return res.status(400).json({ error: 'customerId and url are required' });
     }
 
-    console.log(`[YouTube] Customer ${customerId} | URL: ${url}`);
+    console.log(`[YouTube] Customer ${customerId} | Bot ${botId} | URL: ${url}`);
 
     // Import YouTube transcript service
     const { getYoutubeTranscript, getVideoMetadata } = await import('../services/youtubeTranscript.js');
@@ -234,6 +238,7 @@ router.post('/youtube', async (req, res) => {
     // Store transcript as document
     const result = await storeDocument({
       customerId: parseInt(customerId),
+      botId: botId ? parseInt(botId) : null,
       title: `YouTube Video: ${transcriptData.videoId}`,
       contentType: 'youtube',
       sourceUrl: metadata.url,
@@ -295,6 +300,13 @@ router.delete('/:documentId', async (req, res) => {
   try {
     const { documentId } = req.params;
     
+    // Delete embeddings first
+    await query(
+      `DELETE FROM embeddings WHERE document_id = $1`,
+      [documentId]
+    );
+    
+    // Then delete document
     await query(
       `DELETE FROM documents WHERE id = $1`,
       [documentId]
