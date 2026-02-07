@@ -16,6 +16,7 @@ import authRoutes from './routes/auth.js';
 import loginRoute from './routes/login.js';
 import signupRoute from './routes/signup.js';
 import botRoutes from './routes/bots.js';
+import stripeRoutes from './routes/stripe.js';
 import { startConversationNotifier } from './services/conversationNotifier.js';
 
 // Import middleware
@@ -47,7 +48,93 @@ app.use(cors({
   credentials: true
 }));
 
-// Body parsing
+// ─── STRIPE WEBHOOK (must be before express.json() - needs raw body) ───
+app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  // Dynamically import Stripe to use env vars
+  const Stripe = (await import('stripe')).default;
+  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+  const { query } = await import('./db/database.js');
+
+  const sig = req.headers['stripe-signature'];
+  let event;
+
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+  } catch (error) {
+    console.error('Webhook signature verification failed:', error.message);
+    return res.status(400).send(`Webhook Error: ${error.message}`);
+  }
+
+  try {
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const session = event.data.object;
+        const customerId = parseInt(session.metadata.customerId);
+        if (customerId) {
+          await query(
+            `UPDATE customers 
+             SET subscription_status = 'active',
+                 stripe_customer_id = $1,
+                 stripe_subscription_id = $2
+             WHERE id = $3`,
+            [session.customer, session.subscription, customerId]
+          );
+          console.log(`[Stripe] Customer ${customerId} activated via checkout`);
+        }
+        break;
+      }
+
+      case 'invoice.paid': {
+        const invoice = event.data.object;
+        const result = await query(
+          'SELECT id FROM customers WHERE stripe_customer_id = $1',
+          [invoice.customer]
+        );
+        if (result.rows.length > 0) {
+          await query(
+            "UPDATE customers SET subscription_status = 'active' WHERE stripe_customer_id = $1",
+            [invoice.customer]
+          );
+          console.log(`[Stripe] Invoice paid for customer ${result.rows[0].id}`);
+        }
+        break;
+      }
+
+      case 'invoice.payment_failed': {
+        console.warn(`[Stripe] Payment failed for ${event.data.object.customer}`);
+        break;
+      }
+
+      case 'customer.subscription.deleted': {
+        const subscription = event.data.object;
+        await query(
+          "UPDATE customers SET subscription_status = 'cancelled', stripe_subscription_id = NULL WHERE stripe_customer_id = $1",
+          [subscription.customer]
+        );
+        console.log(`[Stripe] Subscription cancelled for ${subscription.customer}`);
+        break;
+      }
+
+      case 'customer.subscription.updated': {
+        const subscription = event.data.object;
+        if (subscription.status === 'active') {
+          await query(
+            "UPDATE customers SET subscription_status = 'active' WHERE stripe_customer_id = $1",
+            [subscription.customer]
+          );
+        }
+        break;
+      }
+    }
+
+    res.json({ received: true });
+  } catch (error) {
+    console.error('Webhook processing error:', error);
+    res.status(500).json({ error: 'Webhook processing failed' });
+  }
+});
+
+// Body parsing (after webhook route)
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -143,6 +230,9 @@ app.use('/signup', signupRoute);
 
 // Public chat endpoint (no auth required - used by widget)
 app.use('/api/chat', chatRoutes);
+
+// Stripe routes (checkout & portal need auth, webhook handled above)
+app.use('/api/stripe', requireAuth, stripeRoutes);
 
 // Protected routes - require authentication
 app.use('/api/content', requireAuth, contentRoutes);
