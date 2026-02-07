@@ -31,10 +31,11 @@ router.get('/:customerId', async (req, res) => {
 
   try {
     const customerId = requestedCustomerId;
+    const selectedBotId = parseInt(req.query.bot) || null;
     
     // Get customer info
     const customerResult = await query(
-      'SELECT name, email, bot_instructions FROM customers WHERE id = $1',
+      'SELECT name, email FROM customers WHERE id = $1',
       [customerId]
     );
     
@@ -43,37 +44,64 @@ router.get('/:customerId', async (req, res) => {
     }
     
     const customer = customerResult.rows[0];
-    const botInstructions = customer.bot_instructions || '';
     
-    // Get document count
-    const docCountResult = await query(
-      'SELECT COUNT(*) as count FROM documents WHERE customer_id = $1',
+    // Get all bots for this customer
+    const botsResult = await query(
+      'SELECT id, name, bot_instructions, greeting_message, created_at FROM bots WHERE customer_id = $1 ORDER BY created_at ASC',
       [customerId]
+    );
+    
+    const bots = botsResult.rows;
+    
+    // If no bots exist, create a default one
+    if (bots.length === 0) {
+      const newBotResult = await query(
+        `INSERT INTO bots (customer_id, name, bot_instructions) 
+         VALUES ($1, 'My First Bot', 'You are a helpful assistant.')
+         RETURNING id, name, bot_instructions, greeting_message, created_at`,
+        [customerId]
+      );
+      bots.push(newBotResult.rows[0]);
+    }
+    
+    // Select current bot (from query param or first bot)
+    const currentBot = selectedBotId 
+      ? bots.find(b => b.id === selectedBotId) || bots[0]
+      : bots[0];
+    
+    const botId = currentBot.id;
+    const botInstructions = currentBot.bot_instructions || '';
+    const greetingMessage = currentBot.greeting_message || 'Thank you for visiting! How may we assist you today?';
+    
+    // Get document count for current bot
+    const docCountResult = await query(
+      'SELECT COUNT(*) as count FROM documents WHERE bot_id = $1',
+      [botId]
     );
     const documentCount = parseInt(docCountResult.rows[0].count);
     
-    // Get lead count
+    // Get lead count for current bot
     const leadCountResult = await query(
-      'SELECT COUNT(*) as count FROM leads WHERE customer_id = $1',
-      [customerId]
+      'SELECT COUNT(*) as count FROM leads WHERE bot_id = $1',
+      [botId]
     );
     const leadCount = parseInt(leadCountResult.rows[0].count);
     
-    // Get message count
+    // Get message count for current bot
     const messageCountResult = await query(
-      'SELECT COUNT(*) as count FROM messages WHERE customer_id = $1',
-      [customerId]
+      'SELECT COUNT(*) as count FROM messages WHERE bot_id = $1',
+      [botId]
     );
     const messageCount = parseInt(messageCountResult.rows[0].count);
     
-    // Get recent documents (non Q&A)
+    // Get recent documents (non Q&A) for current bot
     const documentsResult = await query(
       `SELECT id, title, content_type, created_at 
        FROM documents 
-       WHERE customer_id = $1 AND (title NOT LIKE 'Q&A:%' OR title IS NULL)
+       WHERE bot_id = $1 AND (title NOT LIKE 'Q&A:%' OR title IS NULL)
        ORDER BY created_at DESC 
        LIMIT 10`,
-      [customerId]
+      [botId]
     );
     
     const documents = documentsResult.rows.map(doc => ({
@@ -83,13 +111,13 @@ router.get('/:customerId', async (req, res) => {
       date: new Date(doc.created_at).toLocaleDateString()
     }));
     
-    // Get Q&A pairs specifically
+    // Get Q&A pairs for current bot
     const qaPairsResult = await query(
       `SELECT id, title, content, created_at 
        FROM documents 
-       WHERE customer_id = $1 AND title LIKE 'Q&A:%'
+       WHERE bot_id = $1 AND title LIKE 'Q&A:%'
        ORDER BY created_at DESC`,
-      [customerId]
+      [botId]
     );
     
     const qaPairs = qaPairsResult.rows.map(doc => ({
@@ -99,14 +127,14 @@ router.get('/:customerId', async (req, res) => {
       date: new Date(doc.created_at).toLocaleDateString()
     }));
     
-    // Get recent leads
+    // Get recent leads for current bot
     const leadsResult = await query(
       `SELECT id, name, email, created_at 
        FROM leads 
-       WHERE customer_id = $1 
+       WHERE bot_id = $1 
        ORDER BY created_at DESC 
        LIMIT 10`,
-      [customerId]
+      [botId]
     );
     
     const leads = leadsResult.rows.map(lead => ({
@@ -116,15 +144,15 @@ router.get('/:customerId', async (req, res) => {
       date: new Date(lead.created_at).toLocaleDateString()
     }));
 
-    // Get recent messages
+    // Get recent messages for current bot
     const messagesResult = await query(
       `SELECT m.id, m.role, m.content, m.created_at, l.name as lead_name, l.email as lead_email
        FROM messages m
        LEFT JOIN leads l ON m.lead_id = l.id
-       WHERE m.customer_id = $1 
+       WHERE m.bot_id = $1 
        ORDER BY m.created_at DESC 
        LIMIT 100`,
-      [customerId]
+      [botId]
     );
 
     const messages = messagesResult.rows.map(msg => ({
@@ -163,6 +191,43 @@ router.get('/:customerId', async (req, res) => {
           .header p { opacity: 0.9; margin-top: 5px; }
           
           .container { max-width: 1200px; margin: 0 auto; padding: 30px 20px; }
+          
+          .bot-selector {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+          }
+          
+          .bot-selector label {
+            font-weight: 600;
+            color: #374151;
+          }
+          
+          .bot-selector select {
+            padding: 10px 15px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 14px;
+            min-width: 200px;
+          }
+          
+          .bot-selector button {
+            padding: 10px 20px;
+          }
+          
+          .bot-selector .delete-btn {
+            background: #ef4444;
+          }
+          
+          .bot-selector .delete-btn:hover {
+            background: #dc2626;
+          }
           
           .stats {
             display: grid;
@@ -310,7 +375,6 @@ router.get('/:customerId', async (req, res) => {
             margin-bottom: 12px;
           }
           
-          /* Download Buttons Styling */
           .download-buttons {
             display: flex;
             gap: 8px;
@@ -335,25 +399,11 @@ router.get('/:customerId', async (req, res) => {
             transform: translateY(-1px);
           }
           
-          .download-btn.youtube {
-            background: #FF0000;
-          }
-          
-          .download-btn.youtube:hover {
-            background: #cc0000;
-          }
-          
-          .download-btn.pdf {
-            background: #1e3a8a;
-          }
-          
-          .download-btn.word {
-            background: #2563eb;
-          }
-          
-          .download-btn.csv {
-            background: #10b981;
-          }
+          .download-btn.youtube { background: #FF0000; }
+          .download-btn.youtube:hover { background: #cc0000; }
+          .download-btn.pdf { background: #1e3a8a; }
+          .download-btn.word { background: #2563eb; }
+          .download-btn.csv { background: #10b981; }
           
           .success-message {
             background: #d1fae5;
@@ -387,6 +437,47 @@ router.get('/:customerId', async (req, res) => {
           .website-controls button.active {
             background: #10b981;
           }
+          
+          .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+          }
+          
+          .modal.show { display: flex; }
+          
+          .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            max-width: 400px;
+            width: 90%;
+          }
+          
+          .modal-content h2 { margin-bottom: 20px; }
+          
+          .modal-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+          }
+          
+          .modal-buttons button { flex: 1; }
+          
+          .cancel-btn {
+            background: #6b7280;
+          }
+          
+          .cancel-btn:hover {
+            background: #4b5563;
+          }
         </style>
       </head>
       <body>
@@ -402,6 +493,18 @@ router.get('/:customerId', async (req, res) => {
         </div>
         
         <div class="container">
+          <!-- Bot Selector -->
+          <div class="bot-selector">
+            <label for="botSelect">Select Bot:</label>
+            <select id="botSelect" onchange="switchBot(this.value)">
+              ${bots.map(bot => `
+                <option value="${bot.id}" ${bot.id === botId ? 'selected' : ''}>${bot.name}</option>
+              `).join('')}
+            </select>
+            <button onclick="showCreateBotModal()">+ New Bot</button>
+            ${bots.length > 1 ? `<button class="delete-btn" onclick="showDeleteBotModal()">Delete Bot</button>` : ''}
+          </div>
+          
           <div class="stats">
             <div class="stat-card">
               <h3>Documents</h3>
@@ -414,6 +517,10 @@ router.get('/:customerId', async (req, res) => {
             <div class="stat-card">
               <h3>Messages</h3>
               <div class="number">${messageCount}</div>
+            </div>
+            <div class="stat-card">
+              <h3>Total Bots</h3>
+              <div class="number">${bots.length}</div>
             </div>
           </div>
           
@@ -429,7 +536,7 @@ router.get('/:customerId', async (req, res) => {
             
             <!-- Upload Content Tab -->
             <div id="upload-tab" class="tab-content active">
-              <h2 style="margin-bottom: 20px;">Upload Training Content</h2>
+              <h2 style="margin-bottom: 20px;">Upload Training Content for "${currentBot.name}"</h2>
               <p style="color: #6b7280; margin-bottom: 20px;">Add content for your chatbot to learn from. The more context you provide, the better it will answer questions.</p>
               
               <div id="success-message" class="success-message"></div>
@@ -504,6 +611,14 @@ You are a friendly customer support assistant for XYZ Company.
 - Keep responses concise (2-3 paragraphs max)">${botInstructions}</textarea>
               </div>
               <button onclick="handleBotInstructionsUpdate()">Save Bot Instructions</button>
+              
+              <h3 style="margin: 30px 0 15px;">Greeting Message</h3>
+              <p style="color: #6b7280; margin-bottom: 15px;">The message shown in the greeting bubble when visitors first see the chatbot.</p>
+              <div class="form-group">
+                <label for="greetingMessage">Greeting Message</label>
+                <input type="text" id="greetingMessage" value="${greetingMessage}" placeholder="Thank you for visiting! How may we assist you today?" />
+              </div>
+              <button onclick="handleGreetingUpdate()">Save Greeting</button>
             </div>
             
             <!-- My Documents Tab -->
@@ -612,16 +727,111 @@ You are a friendly customer support assistant for XYZ Company.
   (function() {
     var script = document.createElement('script');
     script.src = 'https://autoreplychat.com/embed.js';
-    script.setAttribute('data-customer-id', '${customerId}');
+    script.setAttribute('data-bot-id', '${botId}');
     document.body.appendChild(script);
   })();
 &lt;/script&gt;</textarea>
+              <p style="color: #6b7280; margin-top: 15px; font-size: 13px;">Bot ID: <strong>${botId}</strong> (${currentBot.name})</p>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Create Bot Modal -->
+        <div id="createBotModal" class="modal">
+          <div class="modal-content">
+            <h2>Create New Bot</h2>
+            <div class="form-group">
+              <label for="newBotName">Bot Name</label>
+              <input type="text" id="newBotName" placeholder="e.g., Support Bot, Sales Bot" />
+            </div>
+            <div class="modal-buttons">
+              <button class="cancel-btn" onclick="hideCreateBotModal()">Cancel</button>
+              <button onclick="createBot()">Create Bot</button>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Delete Bot Modal -->
+        <div id="deleteBotModal" class="modal">
+          <div class="modal-content">
+            <h2>Delete Bot</h2>
+            <p style="margin-bottom: 15px; color: #6b7280;">Are you sure you want to delete "${currentBot.name}"? This will also delete all documents, leads, and messages associated with this bot.</p>
+            <div class="modal-buttons">
+              <button class="cancel-btn" onclick="hideDeleteBotModal()">Cancel</button>
+              <button class="delete-btn" onclick="deleteBot()">Delete Bot</button>
             </div>
           </div>
         </div>
         
         <script>
+          const customerId = '${customerId}';
+          const botId = '${botId}';
           let websiteMode = 'full';
+          
+          function switchBot(newBotId) {
+            window.location.href = '/api/dashboard/${customerId}?bot=' + newBotId;
+          }
+          
+          function showCreateBotModal() {
+            document.getElementById('createBotModal').classList.add('show');
+          }
+          
+          function hideCreateBotModal() {
+            document.getElementById('createBotModal').classList.remove('show');
+          }
+          
+          function showDeleteBotModal() {
+            document.getElementById('deleteBotModal').classList.add('show');
+          }
+          
+          function hideDeleteBotModal() {
+            document.getElementById('deleteBotModal').classList.remove('show');
+          }
+          
+          async function createBot() {
+            const name = document.getElementById('newBotName').value.trim();
+            if (!name) {
+              showError('Please enter a bot name');
+              return;
+            }
+            
+            try {
+              const response = await fetch('/api/bots', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ customerId, name })
+              });
+              
+              const data = await response.json();
+              
+              if (response.ok) {
+                window.location.href = '/api/dashboard/${customerId}?bot=' + data.botId;
+              } else {
+                showError(data.error || 'Failed to create bot');
+              }
+            } catch (error) {
+              showError('Network error. Please try again.');
+            }
+          }
+          
+          async function deleteBot() {
+            try {
+              const response = await fetch('/api/bots/' + botId, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ customerId })
+              });
+              
+              if (response.ok) {
+                window.location.href = '/api/dashboard/${customerId}';
+              } else {
+                const data = await response.json();
+                showError(data.error || 'Failed to delete bot');
+              }
+            } catch (error) {
+              showError('Network error. Please try again.');
+            }
+          }
           
           function switchTab(tab) {
             document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
@@ -654,7 +864,7 @@ You are a friendly customer support assistant for XYZ Company.
           
           async function downloadDocument(docId, format) {
             try {
-              const response = await fetch(\`/api/documents/\${docId}/download?format=\${format}\`);
+              const response = await fetch('/api/documents/' + docId + '/download?format=' + format);
               
               if (!response.ok) {
                 showError('Download failed');
@@ -665,7 +875,7 @@ You are a friendly customer support assistant for XYZ Company.
               const url = window.URL.createObjectURL(blob);
               const a = document.createElement('a');
               a.href = url;
-              a.download = \`document-\${docId}.\${format}\`;
+              a.download = 'document-' + docId + '.' + format;
               document.body.appendChild(a);
               a.click();
               window.URL.revokeObjectURL(url);
@@ -682,7 +892,8 @@ You are a friendly customer support assistant for XYZ Company.
             for (let file of files) {
               formData.append('files', file);
             }
-            formData.append('customerId', '${customerId}');
+            formData.append('customerId', customerId);
+            formData.append('botId', botId);
             
             try {
               const response = await fetch('/api/content/upload', {
@@ -713,7 +924,8 @@ You are a friendly customer support assistant for XYZ Company.
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                  customerId: '${customerId}',
+                  customerId,
+                  botId,
                   url,
                   mode: websiteMode
                 })
@@ -742,7 +954,8 @@ You are a friendly customer support assistant for XYZ Company.
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                  customerId: '${customerId}',
+                  customerId,
+                  botId,
                   url
                 })
               });
@@ -772,7 +985,8 @@ You are a friendly customer support assistant for XYZ Company.
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                  customerId: '${customerId}',
+                  customerId,
+                  botId,
                   title,
                   content
                 })
@@ -800,17 +1014,18 @@ You are a friendly customer support assistant for XYZ Company.
               return;
             }
             
-            const content = \`Q: \${question}\\n\\nA: \${answer}\`;
-            const title = \`Q&A: \${question.substring(0, 50)}\${question.length > 50 ? '...' : ''}\`;
+            const content = 'Q: ' + question + '\\n\\nA: ' + answer;
+            const title = 'Q&A: ' + question.substring(0, 50) + (question.length > 50 ? '...' : '');
             
             try {
               const response = await fetch('/api/content/text', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                  customerId: '${customerId}',
-                  title: title,
-                  content: content
+                  customerId,
+                  botId,
+                  title,
+                  content
                 })
               });
               const data = await response.json();
@@ -830,18 +1045,13 @@ You are a friendly customer support assistant for XYZ Company.
           async function handleBotInstructionsUpdate() {
             const instructions = document.getElementById('botInstructions').value;
             
-            if (!instructions) {
-              showError('Please enter bot instructions');
-              return;
-            }
-            
             try {
-              const response = await fetch('/api/customer/instructions', {
+              const response = await fetch('/api/bots/' + botId + '/instructions', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                  customerId: '${customerId}',
-                  instructions: instructions
+                  customerId,
+                  instructions
                 })
               });
               const data = await response.json();
@@ -850,6 +1060,30 @@ You are a friendly customer support assistant for XYZ Company.
                 showSuccess('Bot instructions updated successfully!');
               } else {
                 showError(data.error || 'Failed to update instructions');
+              }
+            } catch (error) {
+              showError('Network error. Please try again.');
+            }
+          }
+          
+          async function handleGreetingUpdate() {
+            const greeting = document.getElementById('greetingMessage').value;
+            
+            try {
+              const response = await fetch('/api/bots/' + botId + '/greeting', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  customerId,
+                  greeting
+                })
+              });
+              const data = await response.json();
+              
+              if (response.ok) {
+                showSuccess('Greeting message updated successfully!');
+              } else {
+                showError(data.error || 'Failed to update greeting');
               }
             } catch (error) {
               showError('Network error. Please try again.');
