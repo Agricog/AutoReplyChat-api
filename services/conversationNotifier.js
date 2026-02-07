@@ -20,51 +20,51 @@ export function startConversationNotifier() {
 
 async function checkAndSendNotifications() {
   try {
-    // Find leads with messages older than 1 minute that haven't been notified
-    // Join with bots to get notification settings
+    // Find chat sessions with messages older than 1 minute that haven't been notified
     const result = await query(`
-      SELECT DISTINCT ON (l.id)
-        l.id as lead_id,
-        l.name as lead_name,
-        l.email as lead_email,
-        l.bot_id,
-        l.created_at as lead_created_at,
+      SELECT DISTINCT ON (cs.id)
+        cs.id as session_id,
+        cs.session_id as session_key,
+        cs.visitor_name,
+        cs.visitor_email,
+        cs.bot_id,
+        cs.created_at as session_created_at,
+        cs.last_activity,
         b.name as bot_name,
         b.notification_emails,
-        b.conversation_notifications,
-        (SELECT MAX(created_at) FROM messages WHERE lead_id = l.id) as last_message_at
-      FROM leads l
-      JOIN bots b ON l.bot_id = b.id
+        b.conversation_notifications
+      FROM chat_sessions cs
+      JOIN bots b ON cs.bot_id = b.id
       WHERE b.conversation_notifications = true
         AND b.notification_emails IS NOT NULL
         AND b.notification_emails != ''
-        AND l.notification_sent_at IS NULL
-        AND (SELECT MAX(created_at) FROM messages WHERE lead_id = l.id) < NOW() - INTERVAL '1 minute'
-      ORDER BY l.id
+        AND cs.notification_sent_at IS NULL
+        AND cs.last_activity < NOW() - INTERVAL '1 minute'
+      ORDER BY cs.id
       LIMIT 10
     `);
     
-    for (const lead of result.rows) {
-      await sendConversationTranscript(lead);
+    for (const session of result.rows) {
+      await sendConversationTranscript(session);
     }
   } catch (error) {
     console.error('Conversation notifier error:', error);
   }
 }
 
-async function sendConversationTranscript(lead) {
+async function sendConversationTranscript(session) {
   try {
-    // Get all messages for this lead
+    // Get all messages for this session
     const messagesResult = await query(`
       SELECT role, content, created_at
       FROM messages
-      WHERE lead_id = $1
+      WHERE session_id = $1 AND bot_id = $2
       ORDER BY created_at ASC
-    `, [lead.lead_id]);
+    `, [session.session_key, session.bot_id]);
     
     if (messagesResult.rows.length === 0) {
       // No messages, mark as notified to avoid retry
-      await query('UPDATE leads SET notification_sent_at = NOW() WHERE id = $1', [lead.lead_id]);
+      await query('UPDATE chat_sessions SET notification_sent_at = NOW() WHERE id = $1', [session.session_id]);
       return;
     }
     
@@ -83,16 +83,16 @@ async function sendConversationTranscript(lead) {
     }).join('');
     
     // Parse email addresses
-    const emails = lead.notification_emails.split(',').map(e => e.trim()).filter(e => e);
+    const emails = session.notification_emails.split(',').map(e => e.trim()).filter(e => e);
     
     if (emails.length === 0) {
-      await query('UPDATE leads SET notification_sent_at = NOW() WHERE id = $1', [lead.lead_id]);
+      await query('UPDATE chat_sessions SET notification_sent_at = NOW() WHERE id = $1', [session.session_id]);
       return;
     }
     
     // Build email
-    const visitorInfo = lead.lead_name && lead.lead_email 
-      ? `<p><strong>Visitor:</strong> ${lead.lead_name} (${lead.lead_email})</p>`
+    const visitorInfo = session.visitor_name && session.visitor_email 
+      ? `<p><strong>Visitor:</strong> ${session.visitor_name} (${session.visitor_email})</p>`
       : '<p><strong>Visitor:</strong> Anonymous</p>';
     
     const emailHtml = `
@@ -110,11 +110,11 @@ async function sendConversationTranscript(lead) {
       <body>
         <div class="container">
           <div class="header">
-            <h2 style="margin: 0;">New Conversation - ${lead.bot_name}</h2>
+            <h2 style="margin: 0;">New Conversation - ${session.bot_name}</h2>
           </div>
           <div class="content">
             ${visitorInfo}
-            <p><strong>Started:</strong> ${new Date(lead.lead_created_at).toLocaleString()}</p>
+            <p><strong>Started:</strong> ${new Date(session.session_created_at).toLocaleString()}</p>
             <p><strong>Messages:</strong> ${messages.length}</p>
             
             <h3 style="margin-top: 24px; margin-bottom: 16px; color: #374151;">Conversation Transcript</h3>
@@ -133,16 +133,16 @@ async function sendConversationTranscript(lead) {
     await resend.emails.send({
       from: 'AutoReplyChat <notifications@autoreplychat.com>',
       to: emails,
-      subject: `New conversation on ${lead.bot_name}${lead.lead_name ? ` from ${lead.lead_name}` : ''}`,
+      subject: `New conversation on ${session.bot_name}${session.visitor_name ? ` from ${session.visitor_name}` : ''}`,
       html: emailHtml
     });
     
-    console.log(`✉️ Sent conversation transcript for lead ${lead.lead_id} to ${emails.join(', ')}`);
+    console.log(`✉️ Sent conversation transcript for session ${session.session_id} to ${emails.join(', ')}`);
     
     // Mark as notified
-    await query('UPDATE leads SET notification_sent_at = NOW() WHERE id = $1', [lead.lead_id]);
+    await query('UPDATE chat_sessions SET notification_sent_at = NOW() WHERE id = $1', [session.session_id]);
     
   } catch (error) {
-    console.error(`Failed to send transcript for lead ${lead.lead_id}:`, error);
+    console.error(`Failed to send transcript for session ${session.session_id}:`, error);
   }
 }
