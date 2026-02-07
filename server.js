@@ -87,6 +87,39 @@ app.get('/health', (req, res) => {
 
 // Auth routes (no auth required)
 app.use('/api/auth', authRoutes);
+
+// Public bot settings endpoint (for widget)
+app.get('/api/bots/:botId/settings', async (req, res) => {
+  try {
+    const { query } = await import('./db/database.js');
+    const botId = parseInt(req.params.botId);
+    
+    const result = await query(
+      `SELECT id, name, greeting_message, header_title, header_color, text_color 
+       FROM bots WHERE id = $1`,
+      [botId]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Bot not found' });
+    }
+    
+    const bot = result.rows[0];
+    res.json({
+      botId: bot.id,
+      name: bot.name,
+      greetingMessage: bot.greeting_message || 'Thank you for visiting! How may we assist you today?',
+      headerTitle: bot.header_title || 'Support Assistant',
+      headerColor: bot.header_color || '#3b82f6',
+      textColor: bot.text_color || '#ffffff'
+    });
+  } catch (error) {
+    console.error('Get bot settings error:', error);
+    res.status(500).json({ error: 'Failed to get bot settings' });
+  }
+});
+
+// Protected bot routes
 app.use('/api/bots', requireAuth, botRoutes);
 
 // Login and signup pages (no auth required)
