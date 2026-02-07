@@ -1,199 +1,194 @@
 import express from 'express';
 import Anthropic from '@anthropic-ai/sdk';
-import { sendLeadNotification } from '../services/email.js';
-import { retrieveContext, storeLead, getCustomer } from '../services/rag.js';
 import { query } from '../db/database.js';
+import { retrieveContext, storeLead } from '../services/rag.js';
+import { Resend } from 'resend';
 
 const router = express.Router();
+const anthropic = new Anthropic();
+const resend = new Resend(process.env.RESEND_API_KEY);
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
-
-// POST /api/chat - Handle chat messages with RAG
+// POST /api/chat - Main chat endpoint
 router.post('/', async (req, res) => {
   try {
-    const { message, botId, customerId, conversationHistory, leadId } = req.body;
-    
+    const { message, customerId, botId, sessionId, conversationHistory = [] } = req.body;
+
     if (!message) {
       return res.status(400).json({ error: 'Message is required' });
     }
 
-    // Support both botId (new) and customerId (legacy)
-    let bot;
-    let cid;
-    
+    // Get bot configuration
+    let botConfig;
     if (botId) {
-      // New bot-based lookup
       const botResult = await query(
         'SELECT id, customer_id, bot_instructions FROM bots WHERE id = $1',
         [botId]
       );
-      
-      if (botResult.rows.length === 0) {
-        return res.status(404).json({ error: 'Bot not found' });
+      if (botResult.rows.length > 0) {
+        botConfig = botResult.rows[0];
       }
-      
-      bot = botResult.rows[0];
-      cid = bot.customer_id;
-    } else {
-      // Legacy customer-based lookup - get first bot for customer
-      cid = customerId || 1;
+    }
+
+    if (!botConfig && customerId) {
+      // Fallback to first bot for customer
       const botResult = await query(
         'SELECT id, customer_id, bot_instructions FROM bots WHERE customer_id = $1 ORDER BY created_at ASC LIMIT 1',
-        [cid]
+        [customerId]
       );
-      
       if (botResult.rows.length > 0) {
-        bot = botResult.rows[0];
-      } else {
-        // Fallback to customer's bot_instructions if no bot exists
-        const customerResult = await query(
-          'SELECT bot_instructions FROM customers WHERE id = $1',
-          [cid]
-        );
-        bot = { 
-          id: null, 
-          customer_id: cid, 
-          bot_instructions: customerResult.rows[0]?.bot_instructions || '' 
-        };
+        botConfig = botResult.rows[0];
       }
     }
 
-    const botInstructions = bot.bot_instructions || '';
-
-    // Save user message to database
-    await query(
-      'INSERT INTO messages (customer_id, bot_id, lead_id, role, content) VALUES ($1, $2, $3, $4, $5)',
-      [cid, bot.id, leadId || null, 'user', message]
-    );
-
-    // Retrieve relevant context from bot's knowledge base
-    const context = await retrieveContext(cid, message, 5, bot.id);
-    
-    // Build system prompt with bot instructions and context
-    let systemPrompt = botInstructions || 'You are a helpful assistant.';
-    
-    if (context && context.length > 0) {
-      systemPrompt += '\n\nRelevant information from the knowledge base:\n\n';
-      systemPrompt += context.map((chunk, idx) => `[${idx + 1}] ${chunk}`).join('\n\n');
-      systemPrompt += '\n\nUse this information to answer the user\'s question. If the information is not in the knowledge base, say so politely.';
+    if (!botConfig) {
+      return res.status(404).json({ error: 'Bot not found' });
     }
 
-    // Build conversation history for Claude
-    const messages = conversationHistory || [];
-    messages.push({
-      role: 'user',
-      content: message
-    });
+    const actualBotId = botConfig.id;
+    const actualCustomerId = botConfig.customer_id;
+    const botInstructions = botConfig.bot_instructions || 'You are a helpful assistant.';
 
-    // Call Claude API with context
+    // Create or update chat session
+    if (sessionId) {
+      const existingSession = await query(
+        'SELECT id FROM chat_sessions WHERE session_id = $1 AND bot_id = $2',
+        [sessionId, actualBotId]
+      );
+      
+      if (existingSession.rows.length === 0) {
+        await query(
+          'INSERT INTO chat_sessions (bot_id, session_id) VALUES ($1, $2)',
+          [actualBotId, sessionId]
+        );
+      } else {
+        await query(
+          'UPDATE chat_sessions SET last_activity = NOW() WHERE session_id = $1 AND bot_id = $2',
+          [sessionId, actualBotId]
+        );
+      }
+    }
+
+    // Retrieve context from RAG
+    const context = await retrieveContext(actualCustomerId, message, 5, actualBotId);
+
+    // Build system prompt
+    let systemPrompt = botInstructions;
+    if (context && context.length > 0) {
+      systemPrompt += `\n\nUse the following information to help answer questions:\n${context}`;
+    }
+
+    // Build messages for Claude
+    const claudeMessages = conversationHistory.map(msg => ({
+      role: msg.role === 'user' ? 'user' : 'assistant',
+      content: msg.content
+    }));
+    claudeMessages.push({ role: 'user', content: message });
+
+    // Call Claude API
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 1024,
       system: systemPrompt,
-      messages: messages,
+      messages: claudeMessages
     });
 
     const assistantMessage = response.content[0].text;
 
-    // Save assistant response to database
+    // Save messages to database
     await query(
-      'INSERT INTO messages (customer_id, bot_id, lead_id, role, content) VALUES ($1, $2, $3, $4, $5)',
-      [cid, bot.id, leadId || null, 'assistant', assistantMessage]
+      'INSERT INTO messages (customer_id, bot_id, lead_id, session_id, role, content) VALUES ($1, $2, $3, $4, $5, $6)',
+      [actualCustomerId, actualBotId, null, sessionId || null, 'user', message]
+    );
+    
+    await query(
+      'INSERT INTO messages (customer_id, bot_id, lead_id, session_id, role, content) VALUES ($1, $2, $3, $4, $5, $6)',
+      [actualCustomerId, actualBotId, null, sessionId || null, 'assistant', assistantMessage]
     );
 
-    res.json({
-      message: assistantMessage,
-      conversationId: cid,
-      botId: bot.id,
-      contextUsed: context.length > 0
-    });
+    res.json({ message: assistantMessage });
   } catch (error) {
-    console.error('Claude API error:', error);
-    res.status(500).json({ 
-      error: 'Failed to get response',
-      details: error.message 
-    });
+    console.error('Chat error:', error);
+    res.status(500).json({ error: 'Failed to process message' });
   }
 });
 
 // POST /api/chat/lead - Capture lead information
 router.post('/lead', async (req, res) => {
   try {
-    const { name, email, botId, customerId, conversation } = req.body;
-    
+    const { name, email, customerId, botId, sessionId, conversation } = req.body;
+
     if (!name || !email) {
       return res.status(400).json({ error: 'Name and email are required' });
     }
 
-    // Get bot and customer info
-    let cid;
-    let bid;
-    
-    if (botId) {
-      const botResult = await query(
-        'SELECT id, customer_id FROM bots WHERE id = $1',
-        [botId]
-      );
+    // Get bot info
+    let actualBotId = botId;
+    let actualCustomerId = customerId;
+
+    if (botId && !customerId) {
+      const botResult = await query('SELECT customer_id FROM bots WHERE id = $1', [botId]);
       if (botResult.rows.length > 0) {
-        bid = botResult.rows[0].id;
-        cid = botResult.rows[0].customer_id;
-      }
-    }
-    
-    if (!cid) {
-      cid = customerId || 1;
-      // Get first bot for customer
-      const botResult = await query(
-        'SELECT id FROM bots WHERE customer_id = $1 ORDER BY created_at ASC LIMIT 1',
-        [cid]
-      );
-      if (botResult.rows.length > 0) {
-        bid = botResult.rows[0].id;
+        actualCustomerId = botResult.rows[0].customer_id;
       }
     }
 
-    console.log('Lead captured:', { name, email, customerId: cid, botId: bid });
-    
-    // Store lead in database
-    const leadId = await storeLead({
-      customerId: cid,
-      botId: bid,
-      name,
-      email,
-      conversation: conversation || []
-    });
+    // Store lead
+    const leadResult = await storeLead(actualCustomerId, actualBotId, name, email, conversation);
+    const leadId = leadResult?.id;
 
-    // Get customer info for email
-    const customer = await getCustomer(cid);
-    const businessEmail = customer?.business_email || process.env.TEST_BUSINESS_EMAIL || 'your-email@example.com';
-    
-    // Send email notification to business owner
-    const emailResult = await sendLeadNotification({
-      businessEmail,
-      leadName: name,
-      leadEmail: email,
-      conversation: conversation || [],
-      customerId: cid
-    });
-
-    if (!emailResult.success) {
-      console.error('Failed to send email:', emailResult.error);
+    // Update chat session with visitor info
+    if (sessionId) {
+      await query(
+        'UPDATE chat_sessions SET visitor_name = $1, visitor_email = $2 WHERE session_id = $3 AND bot_id = $4',
+        [name, email, sessionId, actualBotId]
+      );
+      
+      // Also update messages with lead_id
+      if (leadId) {
+        await query(
+          'UPDATE messages SET lead_id = $1 WHERE session_id = $2 AND bot_id = $3',
+          [leadId, sessionId, actualBotId]
+        );
+      }
     }
 
-    res.json({ 
-      success: true,
-      message: 'Lead captured successfully',
-      leadId,
-      emailSent: emailResult.success
-    });
+    // Get customer info for email notification
+    const customerResult = await query(
+      'SELECT c.email as owner_email, c.name as owner_name, b.name as bot_name FROM customers c JOIN bots b ON b.customer_id = c.id WHERE b.id = $1',
+      [actualBotId]
+    );
+
+    if (customerResult.rows.length > 0) {
+      const { owner_email, owner_name, bot_name } = customerResult.rows[0];
+
+      // Send email notification
+      try {
+        await resend.emails.send({
+          from: 'AutoReplyChat <notifications@autoreplychat.com>',
+          to: owner_email,
+          subject: `New lead captured: ${name}`,
+          html: `
+            <h2>New Lead from ${bot_name}</h2>
+            <p><strong>Name:</strong> ${name}</p>
+            <p><strong>Email:</strong> ${email}</p>
+            <p><strong>Time:</strong> ${new Date().toLocaleString()}</p>
+            ${conversation ? `
+              <h3>Conversation:</h3>
+              ${conversation.map(msg => `
+                <p><strong>${msg.role === 'user' ? 'Visitor' : 'Bot'}:</strong> ${msg.content}</p>
+              `).join('')}
+            ` : ''}
+          `
+        });
+      } catch (emailError) {
+        console.error('Failed to send lead notification email:', emailError);
+      }
+    }
+
+    res.json({ success: true, leadId });
   } catch (error) {
     console.error('Lead capture error:', error);
-    res.status(500).json({ 
-      error: 'Failed to capture lead',
-      details: error.message 
-    });
+    res.status(500).json({ error: 'Failed to capture lead' });
   }
 });
 
