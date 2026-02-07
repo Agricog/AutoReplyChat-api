@@ -48,7 +48,7 @@ router.get('/:customerId', async (req, res) => {
     
     // Get all bots for this customer
     const botsResult = await query(
-      'SELECT id, name, bot_instructions, greeting_message, header_title, header_color, text_color, lead_capture_enabled, notification_emails, conversation_notifications, chat_bubble_bg, avatar_bg, button_style, button_position, button_size, bar_message, chat_window_bg, user_message_bg, bot_message_bg, send_button_bg, created_at FROM bots WHERE customer_id = $1 ORDER BY created_at ASC',
+      'SELECT id, name, bot_instructions, greeting_message, header_title, header_color, text_color, lead_capture_enabled, notification_emails, conversation_notifications, chat_bubble_bg, avatar_bg, button_style, button_position, button_size, bar_message, chat_window_bg, user_message_bg, bot_message_bg, send_button_bg, lead_form_message, created_at FROM bots WHERE customer_id = $1 ORDER BY created_at ASC',
       [customerId]
     );
     
@@ -89,6 +89,7 @@ router.get('/:customerId', async (req, res) => {
     const userMessageBg = currentBot.user_message_bg || '#3b82f6';
     const botMessageBg = currentBot.bot_message_bg || '#f3f4f6';
     const sendButtonBg = currentBot.send_button_bg || '#3b82f6';
+    const leadFormMessage = currentBot.lead_form_message || 'Want personalized help? Leave your details and we\\'ll follow up';
     
     // Get document count for current bot
     const docCountResult = await query(
@@ -1291,6 +1292,14 @@ router.get('/:customerId', async (req, res) => {
                     </div>
                     <div class="form-help">When enabled, visitors are asked for their name and email after the first message exchange.</div>
                   </div>
+                  
+                  <div class="form-group">
+                    <label class="form-label">Lead Form Message</label>
+                    <textarea id="leadFormMessage" class="form-input form-textarea" style="min-height: 80px;" placeholder="Want personalized help? Leave your details and we'll follow up">${leadFormMessage}</textarea>
+                    <div class="form-help">The message shown above the lead capture form.</div>
+                  </div>
+                  
+                  <button class="btn btn-primary" onclick="handleLeadFormMessageUpdate()">Save Lead Form Message</button>
                 </div>
               </div>
               
@@ -1841,6 +1850,22 @@ router.get('/:customerId', async (req, res) => {
                 body: JSON.stringify({ customerId, enabled })
               });
               if (response.ok) showSuccess(enabled ? 'Lead capture enabled!' : 'Lead capture disabled!');
+              else showError('Failed to save');
+            } catch (error) {
+              showError('Network error');
+            }
+          }
+          
+          async function handleLeadFormMessageUpdate() {
+            const message = document.getElementById('leadFormMessage').value;
+            
+            try {
+              const response = await fetch('/api/bots/' + botId + '/lead-form-message', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ customerId, message })
+              });
+              if (response.ok) showSuccess('Lead form message saved!');
               else showError('Failed to save');
             } catch (error) {
               showError('Network error');
