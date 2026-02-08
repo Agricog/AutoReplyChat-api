@@ -16,16 +16,15 @@ router.post('/upload', upload.array('files', 10), async (req, res) => {
     }
 
     const results = [];
-    
+
     for (const file of files) {
       try {
         const text = await extractTextFromFile(file.path, file.mimetype);
-
         const result = await storeDocument({
           customerId: parseInt(customerId),
           botId: botId ? parseInt(botId) : null,
           title: file.originalname,
-          contentType: file.mimetype.includes('pdf') ? 'pdf' : 
+          contentType: file.mimetype.includes('pdf') ? 'pdf' :
                        file.mimetype.includes('word') ? 'docx' :
                        file.mimetype.includes('csv') ? 'csv' :
                        file.mimetype.includes('spreadsheet') ? 'excel' : 'text',
@@ -38,7 +37,6 @@ router.post('/upload', upload.array('files', 10), async (req, res) => {
             mimetype: file.mimetype
           }
         });
-
         results.push({ filename: file.originalname, success: true, chunksStored: result.chunksStored });
         cleanupFile(file.path);
       } catch (error) {
@@ -61,7 +59,7 @@ router.post('/upload', upload.array('files', 10), async (req, res) => {
 router.post('/text', async (req, res) => {
   try {
     const { customerId, botId, title, content } = req.body;
-    
+
     if (!customerId || !content) {
       return res.status(400).json({ error: 'customerId and content are required' });
     }
@@ -87,7 +85,7 @@ router.post('/text', async (req, res) => {
 router.post('/scrape-website', async (req, res) => {
   try {
     const { customerId, botId, url, mode } = req.body;
-    
+
     if (!customerId || !url) {
       return res.status(400).json({ error: 'customerId and url are required' });
     }
@@ -141,6 +139,7 @@ router.post('/scrape-website', async (req, res) => {
         content: pageData.content,
         metadata: { scrapedAt: new Date().toISOString(), wordCount: pageData.wordCount, url: pageData.url }
       });
+
       res.json({ success: true, message: 'Single page scraped successfully', title: pageData.title, wordCount: pageData.wordCount, chunksStored: result.chunksStored });
     }
   } catch (error) {
@@ -154,7 +153,7 @@ router.post('/retrain', async (req, res) => {
   try {
     const { customerId, documentIds } = req.body;
 
-    if (parseInt(customerId) !== req.session.customerId) {
+    if (parseInt(customerId) !== req.customerId) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
@@ -162,25 +161,22 @@ router.post('/retrain', async (req, res) => {
       return res.status(400).json({ error: 'documentIds array is required' });
     }
 
-    // Get documents to retrain
     const docsResult = await query(
       'SELECT id, source_url, content_type, bot_id FROM documents WHERE id = ANY($1) AND customer_id = $2',
       [documentIds, customerId]
     );
 
     const websiteDocs = docsResult.rows.filter(d => d.content_type === 'website' && d.source_url);
-    
+
     if (websiteDocs.length === 0) {
       return res.status(400).json({ error: 'No website documents found to retrain. Only scraped pages can be retrained.' });
     }
 
-    // Respond immediately - process in background
     res.json({
       success: true,
       message: `Retraining ${websiteDocs.length} page(s) in the background. Refresh the page in a moment to see updated content.`
     });
 
-    // Background processing
     (async () => {
       const { scrapeWebpage } = await import('../services/webScraper.js');
       let successCount = 0;
@@ -190,10 +186,8 @@ router.post('/retrain', async (req, res) => {
           console.log(`[Retrain] Re-scraping doc ${doc.id}: ${doc.source_url}`);
           const pageData = await scrapeWebpage(doc.source_url);
 
-          // Delete old embeddings
           await query('DELETE FROM embeddings WHERE document_id = $1', [doc.id]);
 
-          // Update the document in-place
           await query(
             `UPDATE documents SET content = $1, title = $2, last_retrained_at = NOW(),
              metadata = jsonb_build_object('scrapedAt', $3::text, 'wordCount', $4::int, 'url', $5::text, 'retrained', true)
@@ -201,12 +195,7 @@ router.post('/retrain', async (req, res) => {
             [pageData.content, pageData.title, new Date().toISOString(), pageData.wordCount, pageData.url, doc.id]
           );
 
-          // Re-create embeddings by storing again (delete old doc entry, store new)
-          // Actually we already updated the doc, now we just need embeddings
-          // We'll use storeDocument but first delete the doc and re-create
-          // Simpler: delete the doc, then storeDocument creates a fresh one
           await query('DELETE FROM documents WHERE id = $1', [doc.id]);
-
           await storeDocument({
             customerId: parseInt(customerId),
             botId: doc.bot_id,
@@ -226,7 +215,6 @@ router.post('/retrain', async (req, res) => {
       }
       console.log(`[Retrain] Complete: ${successCount}/${websiteDocs.length} retrained`);
     })();
-
   } catch (error) {
     console.error('[Retrain] Error:', error);
     res.status(500).json({ error: 'Failed to start retrain' });
@@ -238,7 +226,7 @@ router.post('/retrain-schedule', async (req, res) => {
   try {
     const { customerId, botId, frequency, time } = req.body;
 
-    if (parseInt(customerId) !== req.session.customerId) {
+    if (parseInt(customerId) !== req.customerId) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
@@ -253,7 +241,6 @@ router.post('/retrain-schedule', async (req, res) => {
     );
 
     console.log(`[Retrain Schedule] Bot ${botId}: ${frequency} at ${time}`);
-
     res.json({ success: true, message: `Retrain schedule set to ${frequency}${frequency !== 'none' ? ' at ' + time : ''}` });
   } catch (error) {
     console.error('[Retrain Schedule] Error:', error);
@@ -290,7 +277,7 @@ router.post('/delete-bulk', async (req, res) => {
   try {
     const { customerId, documentIds } = req.body;
 
-    if (parseInt(customerId) !== req.session.customerId) {
+    if (parseInt(customerId) !== req.customerId) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
@@ -298,7 +285,6 @@ router.post('/delete-bulk', async (req, res) => {
       return res.status(400).json({ error: 'documentIds array is required' });
     }
 
-    // Verify all docs belong to customer
     const docCheck = await query(
       'SELECT id FROM documents WHERE id = ANY($1) AND customer_id = $2',
       [documentIds, customerId]
@@ -309,7 +295,6 @@ router.post('/delete-bulk', async (req, res) => {
     }
 
     const validIds = docCheck.rows.map(r => r.id);
-
     await query('DELETE FROM embeddings WHERE document_id = ANY($1)', [validIds]);
     await query('DELETE FROM documents WHERE id = ANY($1)', [validIds]);
 
@@ -325,7 +310,7 @@ router.post('/delete-bulk', async (req, res) => {
 router.post('/youtube', async (req, res) => {
   try {
     const { customerId, botId, url } = req.body;
-    
+
     if (!customerId || !url) {
       return res.status(400).json({ error: 'customerId and url are required' });
     }
@@ -360,6 +345,7 @@ router.get('/:customerId', async (req, res) => {
        FROM documents WHERE customer_id = $1 ORDER BY created_at DESC`,
       [customerId]
     );
+
     res.json({ success: true, documents: result.rows });
   } catch (error) {
     console.error('Error listing documents:', error);
@@ -372,8 +358,8 @@ router.delete('/:documentId', async (req, res) => {
   try {
     const { documentId } = req.params;
     const { customerId } = req.body;
-    
-    if (parseInt(customerId) !== req.session.customerId) {
+
+    if (parseInt(customerId) !== req.customerId) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
