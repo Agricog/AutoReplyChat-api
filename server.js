@@ -18,6 +18,7 @@ import signupRoute from './routes/signup.js';
 import botRoutes from './routes/bots.js';
 import stripeRoutes from './routes/stripe.js';
 import { startConversationNotifier } from './services/conversationNotifier.js';
+import { startRetrainScheduler } from './services/retrainScheduler.js';
 
 // Import middleware
 import { requireAuth } from './middleware/auth.js';
@@ -262,6 +263,8 @@ app.listen(PORT, () => {
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔒 Session store: PostgreSQL`);
 });
+
+startRetrainScheduler();
 
 // Start conversation notifier
 startConversationNotifier();
