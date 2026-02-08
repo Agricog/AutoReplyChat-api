@@ -13,25 +13,24 @@ function generatePublicId() {
 router.post('/', async (req, res) => {
   try {
     const { customerId, name } = req.body;
-    
+
     if (!customerId || !name) {
       return res.status(400).json({ error: 'customerId and name are required' });
     }
-    
-    // Verify session
-    if (parseInt(customerId) !== req.session.customerId) {
+
+    if (parseInt(customerId) !== req.customerId) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
-    
+
     const publicId = generatePublicId();
-    
+
     const result = await query(
       `INSERT INTO bots (customer_id, name, public_id, bot_instructions) 
        VALUES ($1, $2, $3, 'You are a helpful assistant.')
        RETURNING id, public_id`,
       [customerId, name, publicId]
     );
-    
+
     res.json({ success: true, botId: result.rows[0].id, publicId: result.rows[0].public_id });
   } catch (error) {
     console.error('Create bot error:', error);
@@ -43,26 +42,30 @@ router.post('/', async (req, res) => {
 router.get('/:botId/settings', async (req, res) => {
   try {
     const botIdParam = req.params.botId;
-    
+
     // Support both numeric ID and public_id
     const isNumeric = /^\d+$/.test(botIdParam);
     const result = await query(
-      `SELECT id, public_id, name, greeting_message, header_title, header_color, text_color, lead_capture_enabled,
-              chat_bubble_bg, avatar_bg, button_style, button_position, button_size, bar_message,
-              chat_window_bg, user_message_bg, bot_message_bg, send_button_bg, lead_form_message,
-              greeting_bubble_enabled
-       FROM bots WHERE ${isNumeric ? 'id = $1' : 'public_id = $1'}`,
+      `SELECT b.id, b.customer_id, b.public_id, b.name, b.greeting_message, b.header_title, b.header_color, b.text_color, b.lead_capture_enabled,
+              b.chat_bubble_bg, b.avatar_bg, b.button_style, b.button_position, b.button_size, b.bar_message,
+              b.chat_window_bg, b.user_message_bg, b.bot_message_bg, b.send_button_bg, b.lead_form_message,
+              b.greeting_bubble_enabled, c.subscription_status
+       FROM bots b
+       JOIN customers c ON c.id = b.customer_id
+       WHERE ${isNumeric ? 'b.id = $1' : 'b.public_id = $1'}`,
       [isNumeric ? parseInt(botIdParam) : botIdParam]
     );
-    
+
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Bot not found' });
     }
-    
+
     const bot = result.rows[0];
-    
+    const isTrial = bot.subscription_status === 'trial';
+
     res.json({
       botId: bot.public_id || bot.id,
+      customerId: bot.customer_id,
       name: bot.name,
       greetingMessage: bot.greeting_message || 'Thank you for visiting! How may we assist you today?',
       headerTitle: bot.header_title || 'Support Assistant',
@@ -80,7 +83,8 @@ router.get('/:botId/settings', async (req, res) => {
       botMessageBg: bot.bot_message_bg || '#f3f4f6',
       sendButtonBg: bot.send_button_bg || '#3b82f6',
       leadFormMessage: bot.lead_form_message || 'Want personalized help? Leave your details and we\'ll follow up',
-      greetingBubbleEnabled: bot.greeting_bubble_enabled !== false
+      greetingBubbleEnabled: bot.greeting_bubble_enabled !== false,
+      isTrial
     });
   } catch (error) {
     console.error('Get bot settings error:', error);
@@ -93,39 +97,35 @@ router.delete('/:botId', async (req, res) => {
   try {
     const botId = parseInt(req.params.botId);
     const { customerId } = req.body;
-    
-    // Verify session
-    if (parseInt(customerId) !== req.session.customerId) {
+
+    if (parseInt(customerId) !== req.customerId) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
-    
-    // Check bot belongs to customer
+
     const botCheck = await query(
       'SELECT id FROM bots WHERE id = $1 AND customer_id = $2',
       [botId, customerId]
     );
-    
+
     if (botCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Bot not found' });
     }
-    
-    // Check customer has more than one bot
+
     const countResult = await query(
       'SELECT COUNT(*) as count FROM bots WHERE customer_id = $1',
       [customerId]
     );
-    
+
     if (parseInt(countResult.rows[0].count) <= 1) {
       return res.status(400).json({ error: 'Cannot delete your only bot' });
     }
-    
-    // Delete related data first (cascade should handle this, but being explicit)
+
     await query('DELETE FROM messages WHERE bot_id = $1', [botId]);
     await query('DELETE FROM leads WHERE bot_id = $1', [botId]);
     await query('DELETE FROM embeddings WHERE bot_id = $1', [botId]);
     await query('DELETE FROM documents WHERE bot_id = $1', [botId]);
     await query('DELETE FROM bots WHERE id = $1', [botId]);
-    
+
     res.json({ success: true });
   } catch (error) {
     console.error('Delete bot error:', error);
@@ -138,27 +138,25 @@ router.post('/:botId/instructions', async (req, res) => {
   try {
     const botId = parseInt(req.params.botId);
     const { customerId, instructions } = req.body;
-    
-    // Verify session
-    if (parseInt(customerId) !== req.session.customerId) {
+
+    if (parseInt(customerId) !== req.customerId) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
-    
-    // Check bot belongs to customer
+
     const botCheck = await query(
       'SELECT id FROM bots WHERE id = $1 AND customer_id = $2',
       [botId, customerId]
     );
-    
+
     if (botCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Bot not found' });
     }
-    
+
     await query(
       'UPDATE bots SET bot_instructions = $1 WHERE id = $2',
       [instructions, botId]
     );
-    
+
     res.json({ success: true });
   } catch (error) {
     console.error('Update instructions error:', error);
@@ -171,27 +169,25 @@ router.post('/:botId/greeting', async (req, res) => {
   try {
     const botId = parseInt(req.params.botId);
     const { customerId, greeting } = req.body;
-    
-    // Verify session
-    if (parseInt(customerId) !== req.session.customerId) {
+
+    if (parseInt(customerId) !== req.customerId) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
-    
-    // Check bot belongs to customer
+
     const botCheck = await query(
       'SELECT id FROM bots WHERE id = $1 AND customer_id = $2',
       [botId, customerId]
     );
-    
+
     if (botCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Bot not found' });
     }
-    
+
     await query(
       'UPDATE bots SET greeting_message = $1 WHERE id = $2',
       [greeting, botId]
     );
-    
+
     res.json({ success: true });
   } catch (error) {
     console.error('Update greeting error:', error);
@@ -204,27 +200,25 @@ router.post('/:botId/greeting-bubble', async (req, res) => {
   try {
     const botId = parseInt(req.params.botId);
     const { customerId, enabled } = req.body;
-    
-    // Verify session
-    if (parseInt(customerId) !== req.session.customerId) {
+
+    if (parseInt(customerId) !== req.customerId) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
-    
-    // Check bot belongs to customer
+
     const botCheck = await query(
       'SELECT id FROM bots WHERE id = $1 AND customer_id = $2',
       [botId, customerId]
     );
-    
+
     if (botCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Bot not found' });
     }
-    
+
     await query(
       'UPDATE bots SET greeting_bubble_enabled = $1 WHERE id = $2',
       [enabled, botId]
     );
-    
+
     res.json({ success: true });
   } catch (error) {
     console.error('Update greeting bubble error:', error);
@@ -236,27 +230,25 @@ router.post('/:botId/greeting-bubble', async (req, res) => {
 router.post('/:botId/appearance', async (req, res) => {
   try {
     const botId = parseInt(req.params.botId);
-    const { 
+    const {
       customerId, headerTitle, headerColor, textColor,
       chatBubbleBg, avatarBg, buttonStyle, buttonPosition, buttonSize, barMessage,
       chatWindowBg, userMessageBg, botMessageBg, sendButtonBg
     } = req.body;
-    
-    // Verify session
-    if (parseInt(customerId) !== req.session.customerId) {
+
+    if (parseInt(customerId) !== req.customerId) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
-    
-    // Check bot belongs to customer
+
     const botCheck = await query(
       'SELECT id FROM bots WHERE id = $1 AND customer_id = $2',
       [botId, customerId]
     );
-    
+
     if (botCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Bot not found' });
     }
-    
+
     await query(
       `UPDATE bots SET 
         header_title = $1, header_color = $2, text_color = $3,
@@ -264,11 +256,11 @@ router.post('/:botId/appearance', async (req, res) => {
         button_size = $8, bar_message = $9, chat_window_bg = $10, user_message_bg = $11, 
         bot_message_bg = $12, send_button_bg = $13
        WHERE id = $14`,
-      [headerTitle, headerColor, textColor, chatBubbleBg, avatarBg, buttonStyle, 
-       buttonPosition, buttonSize, barMessage, chatWindowBg, userMessageBg, 
+      [headerTitle, headerColor, textColor, chatBubbleBg, avatarBg, buttonStyle,
+       buttonPosition, buttonSize, barMessage, chatWindowBg, userMessageBg,
        botMessageBg, sendButtonBg, botId]
     );
-    
+
     res.json({ success: true });
   } catch (error) {
     console.error('Update appearance error:', error);
@@ -281,27 +273,25 @@ router.post('/:botId/lead-capture', async (req, res) => {
   try {
     const botId = parseInt(req.params.botId);
     const { customerId, enabled } = req.body;
-    
-    // Verify session
-    if (parseInt(customerId) !== req.session.customerId) {
+
+    if (parseInt(customerId) !== req.customerId) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
-    
-    // Check bot belongs to customer
+
     const botCheck = await query(
       'SELECT id FROM bots WHERE id = $1 AND customer_id = $2',
       [botId, customerId]
     );
-    
+
     if (botCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Bot not found' });
     }
-    
+
     await query(
       'UPDATE bots SET lead_capture_enabled = $1 WHERE id = $2',
       [enabled, botId]
     );
-    
+
     res.json({ success: true });
   } catch (error) {
     console.error('Update lead capture error:', error);
@@ -314,27 +304,25 @@ router.post('/:botId/lead-form-message', async (req, res) => {
   try {
     const botId = parseInt(req.params.botId);
     const { customerId, message } = req.body;
-    
-    // Verify session
-    if (parseInt(customerId) !== req.session.customerId) {
+
+    if (parseInt(customerId) !== req.customerId) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
-    
-    // Check bot belongs to customer
+
     const botCheck = await query(
       'SELECT id FROM bots WHERE id = $1 AND customer_id = $2',
       [botId, customerId]
     );
-    
+
     if (botCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Bot not found' });
     }
-    
+
     await query(
       'UPDATE bots SET lead_form_message = $1 WHERE id = $2',
       [message, botId]
     );
-    
+
     res.json({ success: true });
   } catch (error) {
     console.error('Update lead form message error:', error);
@@ -347,27 +335,25 @@ router.post('/:botId/notifications', async (req, res) => {
   try {
     const botId = parseInt(req.params.botId);
     const { customerId, enabled, emails } = req.body;
-    
-    // Verify session
-    if (parseInt(customerId) !== req.session.customerId) {
+
+    if (parseInt(customerId) !== req.customerId) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
-    
-    // Check bot belongs to customer
+
     const botCheck = await query(
       'SELECT id FROM bots WHERE id = $1 AND customer_id = $2',
       [botId, customerId]
     );
-    
+
     if (botCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Bot not found' });
     }
-    
+
     await query(
       'UPDATE bots SET conversation_notifications = $1, notification_emails = $2 WHERE id = $3',
       [enabled, emails, botId]
     );
-    
+
     res.json({ success: true });
   } catch (error) {
     console.error('Update notifications error:', error);
