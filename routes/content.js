@@ -137,50 +137,56 @@ router.post('/scrape-website', async (req, res) => {
     // Import scraper
     const { scrapeWebpage, crawlWebsite } = await import('../services/webScraper.js');
 
-    let totalChunks = 0;
-    let pageCount = 0;
-
     if (fullSite) {
-      console.log('[Website Scrape] Starting full website crawl...');
-      
-      // Crawl entire website (up to 20 pages)
-      const pages = await crawlWebsite(validUrl.href, 20);
-      
-      console.log(`[Website Scrape] Crawl complete. ${pages.length} pages found.`);
-      
-      // Store each page as a separate document
-      for (const pageData of pages) {
-        const result = await storeDocument({
-          customerId: parseInt(customerId),
-          botId: botId ? parseInt(botId) : null,
-          title: pageData.title,
-          contentType: 'website',
-          sourceUrl: pageData.url,
-          content: pageData.content,
-          metadata: {
-            scrapedAt: new Date().toISOString(),
-            wordCount: pageData.wordCount,
-            url: pageData.url,
-            fullSiteCrawl: true
-          }
-        });
-        totalChunks += result.chunksStored;
-        pageCount++;
-        console.log(`[Website Scrape] Stored page ${pageCount}: ${pageData.title} (${result.chunksStored} chunks)`);
-      }
-
-      console.log(`[Website Scrape] Complete! ${pageCount} pages, ${totalChunks} total chunks stored.`);
-
+      // RESPOND IMMEDIATELY - process in background to avoid timeout
       res.json({
         success: true,
-        message: `Website crawled successfully! ${pageCount} pages scraped.`,
-        pagesScraped: pageCount,
-        totalChunks: totalChunks
+        message: 'Website crawl started! Pages will appear in your Documents tab as they are scraped. Refresh the page to see progress.'
       });
+
+      // Background processing - crawl and store each page as it's found
+      (async () => {
+        let pageCount = 0;
+        let totalChunks = 0;
+
+        try {
+          console.log('[Website Scrape] Starting background full website crawl...');
+
+          await crawlWebsite(validUrl.href, 100, async (pageData) => {
+            // This callback is called for each page as it's scraped
+            try {
+              const result = await storeDocument({
+                customerId: parseInt(customerId),
+                botId: botId ? parseInt(botId) : null,
+                title: pageData.title,
+                contentType: 'website',
+                sourceUrl: pageData.url,
+                content: pageData.content,
+                metadata: {
+                  scrapedAt: new Date().toISOString(),
+                  wordCount: pageData.wordCount,
+                  url: pageData.url,
+                  fullSiteCrawl: true
+                }
+              });
+              pageCount++;
+              totalChunks += result.chunksStored;
+              console.log(`[Website Scrape] Stored page ${pageCount}: ${pageData.title} (${result.chunksStored} chunks)`);
+            } catch (storeError) {
+              console.error(`[Website Scrape] Failed to store page ${pageData.url}:`, storeError.message);
+            }
+          });
+
+          console.log(`[Website Scrape] Background crawl complete! ${pageCount} pages, ${totalChunks} total chunks stored.`);
+        } catch (error) {
+          console.error('[Website Scrape] Background crawl error:', error);
+        }
+      })();
+
     } else {
       console.log('[Website Scrape] Scraping single page...');
       
-      // Scrape single page only
+      // Scrape single page only (synchronous - fast enough)
       const pageData = await scrapeWebpage(validUrl.href);
       const result = await storeDocument({
         customerId: parseInt(customerId),
@@ -299,16 +305,32 @@ router.get('/:customerId', async (req, res) => {
 router.delete('/:documentId', async (req, res) => {
   try {
     const { documentId } = req.params;
+    const { customerId } = req.body;
     
+    // Verify session
+    if (parseInt(customerId) !== req.session.customerId) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    // Verify document belongs to customer
+    const docCheck = await query(
+      'SELECT id FROM documents WHERE id = $1 AND customer_id = $2',
+      [documentId, customerId]
+    );
+    
+    if (docCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+
     // Delete embeddings first
     await query(
-      `DELETE FROM embeddings WHERE document_id = $1`,
+      'DELETE FROM embeddings WHERE document_id = $1',
       [documentId]
     );
     
     // Then delete document
     await query(
-      `DELETE FROM documents WHERE id = $1`,
+      'DELETE FROM documents WHERE id = $1',
       [documentId]
     );
 
