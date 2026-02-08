@@ -226,10 +226,6 @@ app.get('/api/bots/:publicId/settings', async (req, res) => {
 // Protected bot routes
 app.use('/api/bots', requireAuth, botRoutes);
 
-// Login and signup pages (no auth required)
-app.use('/login', loginRoute);
-app.use('/signup', signupRoute);
-
 // Public chat endpoint (no auth required - used by widget)
 app.use('/api/chat', chatRoutes);
 
