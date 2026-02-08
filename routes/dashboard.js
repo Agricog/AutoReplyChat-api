@@ -421,22 +421,7 @@ router.get('/:customerId', async (req, res) => {
     );
     const messageCount = parseInt(messageCountResult.rows[0].count);
     
-    // Get recent documents (non Q&A) for current bot
-    const documentsResult = await query(
-      `SELECT id, title, content_type, created_at 
-       FROM documents 
-       WHERE bot_id = $1 AND (title NOT LIKE 'Q&A:%' OR title IS NULL)
-       ORDER BY created_at DESC 
-       LIMIT 10`,
-      [botId]
-    );
-    
-    const documents = documentsResult.rows.map(doc => ({
-      id: doc.id,
-      title: doc.title || 'Untitled',
-      type: doc.content_type,
-      date: new Date(doc.created_at).toLocaleDateString()
-    }));
+    https://www.thehertsmere.co.uk/
     
     // Get Q&A pairs for current bot
     const qaPairsResult = await query(
