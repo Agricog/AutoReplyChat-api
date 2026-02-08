@@ -359,13 +359,15 @@ router.get('/:customerId', async (req, res) => {
     
     const bots = botsResult.rows;
     
-    // If no bots exist, create a default one
+   // If no bots exist, create a default one
     if (bots.length === 0) {
+      const crypto = await import('crypto');
+      const newPublicId = crypto.default.randomBytes(12).toString('hex');
       const newBotResult = await query(
-        `INSERT INTO bots (customer_id, name, bot_instructions) 
-         VALUES ($1, 'My First Bot', 'You are a helpful assistant.')
-         RETURNING id, name, bot_instructions, greeting_message, created_at`,
-        [customerId]
+        `INSERT INTO bots (customer_id, name, public_id, bot_instructions) 
+         VALUES ($1, 'My First Bot', $2, 'You are a helpful assistant.')
+         RETURNING id, public_id, name, bot_instructions, greeting_message, created_at`,
+        [customerId, newPublicId]
       );
       bots.push(newBotResult.rows[0]);
     }
