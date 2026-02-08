@@ -19,6 +19,7 @@ import botRoutes from './routes/bots.js';
 import stripeRoutes from './routes/stripe.js';
 import { startConversationNotifier } from './services/conversationNotifier.js';
 import { startRetrainScheduler } from './services/retrainScheduler.js';
+import dashboardApiRoutes from './routes/dashboard-api.js';
 
 // Import middleware
 import { requireAuth } from './middleware/auth.js';
@@ -240,6 +241,7 @@ app.use('/api/content', requireAuth, contentRoutes);
 app.use('/api/customers', requireAuth, customersRoutes);
 app.use('/api/dashboard', requireAuth, dashboardRoutes);
 app.use('/api/documents', documentRoutes);
+app.use('/api/dash', requireAuth, dashboardApiRoutes);
 
 // Admin routes (no auth for now)
 app.use('/api/admin', adminRoutes);
