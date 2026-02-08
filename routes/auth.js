@@ -2,7 +2,7 @@ import express from 'express';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
-import { query } from '../db/index.js';
+import { query } from '../db/database.js';
 import { loginLimiter, signupLimiter, generateToken } from '../middleware/auth.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'change-this-in-production';
