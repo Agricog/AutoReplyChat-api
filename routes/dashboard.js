@@ -935,17 +935,124 @@ router.get('/:customerId', async (req, res) => {
             <!-- Documents Tab -->
             <div id="tab-documents" class="tab-panel">
               <div class="content-card">
-                <div class="content-card-header"><h3>Training Documents</h3></div>
-                <div class="content-card-body">
-                  ${documents.length > 0 ? documents.map(doc => `
-                    <div class="list-item">
-                      <div class="list-item-info"><div class="list-item-title">${doc.title}</div><div class="list-item-meta">${doc.type} • ${doc.date}</div></div>
-                      <div class="list-item-actions"><span class="badge badge-gray">${doc.type}</span></div>
-                    </div>
-                  `).join('') : '<p style="color: #64748b; text-align: center; padding: 40px;">No documents yet. Upload content to get started.</p>'}
+                <div class="content-card-header" style="flex-wrap: wrap; gap: 10px;">
+                  <h3>Training Documents <span style="font-weight: 400; font-size: 14px; color: #64748b;">(${documents.length})</span></h3>
+                  <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <button class="btn btn-primary" onclick="retrainSelected()" id="retrainSelectedBtn" style="display:none;"><svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24" style="margin-right: 4px;"><path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg> Retrain Selected</button>
+                    <button class="btn btn-danger" onclick="deleteSelected()" id="deleteSelectedBtn" style="display:none;">Delete Selected</button>
+                    <button class="btn btn-secondary" onclick="openRetrainSchedule()"><svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24" style="margin-right: 4px;"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg> Schedule</button>
+                  </div>
+                </div>
+                <div class="content-card-body" style="padding: 0; overflow-x: auto;">
+                  ${documents.length > 0 ? `
+                  <table style="width: 100%; border-collapse: collapse; min-width: 700px;">
+                    <thead>
+                      <tr style="border-bottom: 2px solid #e2e8f0; text-align: left;">
+                        <th style="padding: 12px 16px; width: 40px;"><input type="checkbox" id="selectAllDocs" onchange="toggleSelectAll(this)" /></th>
+                        <th style="padding: 12px 8px; font-size: 11px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px;">Status</th>
+                        <th style="padding: 12px 8px; font-size: 11px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px;">Chars</th>
+                        <th style="padding: 12px 8px; font-size: 11px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px;">Title / Source</th>
+                        <th style="padding: 12px 8px; font-size: 11px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px;">Date Added</th>
+                        <th style="padding: 12px 8px; font-size: 11px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px;">Type</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${documents.map(doc => `
+                      <tr style="border-bottom: 1px solid #f1f5f9;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
+                        <td style="padding: 12px 16px;"><input type="checkbox" class="doc-checkbox" value="${doc.id}" onchange="updateBulkButtons()" /></td>
+                        <td style="padding: 12px 8px;"><span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 8px; height: 8px; background: #22c55e; border-radius: 50%;"></span><span style="font-size: 13px; color: #64748b;">Indexed</span></span></td>
+                        <td style="padding: 12px 8px; font-size: 13px; color: #1e293b; font-weight: 500;">${doc.charCount.toLocaleString()}</td>
+                        <td style="padding: 12px 8px;"><div style="font-size: 14px; font-weight: 500; color: #1e293b; margin-bottom: 2px; max-width: 350px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${doc.title}</div>${doc.url ? '<a href="' + doc.url + '" target="_blank" style="font-size: 12px; color: #3b82f6; text-decoration: none; word-break: break-all;">' + doc.url.substring(0, 60) + (doc.url.length > 60 ? '...' : '') + '</a>' : ''}</td>
+                        <td style="padding: 12px 8px; font-size: 13px; color: #64748b; white-space: nowrap;">${doc.date}</td>
+                        <td style="padding: 12px 8px;"><span class="badge badge-${doc.type === 'website' ? 'blue' : doc.type === 'youtube' ? 'green' : 'gray'}">${doc.type}</span></td>
+                      </tr>
+                      `).join('')}
+                    </tbody>
+                  </table>
+                  ` : '<p style="color: #64748b; text-align: center; padding: 40px;">No documents yet. Upload content to get started.</p>'}
+                </div>
+              </div>
+
+              <!-- Retrain Schedule Modal -->
+              <div id="retrainModal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:10000; align-items:center; justify-content:center;">
+                <div style="background:white; border-radius:12px; padding:32px; max-width:440px; width:90%; position:relative; margin:auto; margin-top:15vh;">
+                  <button onclick="closeRetrainModal()" style="position:absolute; top:12px; right:16px; background:none; border:none; font-size:24px; cursor:pointer; color:#64748b;">&times;</button>
+                  <h3 style="margin:0 0 8px 0; font-size:20px;">Retrain Schedule</h3>
+                  <p style="color:#64748b; margin:0 0 24px 0; font-size:14px;">Automatically re-scrape all website pages on a schedule to keep your bot up to date.</p>
+                  
+                  <div style="margin-bottom: 16px;">
+                    <label style="display:block; font-weight:600; margin-bottom:6px; font-size:14px;">Frequency</label>
+                    <select id="retrainFrequency" style="width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px;">
+                      <option value="none">None (manual only)</option>
+                      <option value="daily">Daily</option>
+                      <option value="weekly">Weekly</option>
+                      <option value="monthly">Monthly</option>
+                    </select>
+                  </div>
+                  
+                  <div style="margin-bottom: 24px;">
+                    <label style="display:block; font-weight:600; margin-bottom:6px; font-size:14px;">Time (UTC)</label>
+                    <select id="retrainTime" style="width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px;">
+                      <option value="00:00">12:00 AM</option>
+                      <option value="01:00">1:00 AM</option>
+                      <option value="02:00">2:00 AM</option>
+                      <option value="03:00" selected>3:00 AM</option>
+                      <option value="04:00">4:00 AM</option>
+                      <option value="05:00">5:00 AM</option>
+                      <option value="06:00">6:00 AM</option>
+                      <option value="12:00">12:00 PM</option>
+                      <option value="18:00">6:00 PM</option>
+                    </select>
+                  </div>
+                  
+                  <div style="display:flex; gap:10px;">
+                    <button class="btn btn-secondary" onclick="closeRetrainModal()" style="flex:1;">Cancel</button>
+                    <button class="btn btn-primary" onclick="saveRetrainSchedule()" style="flex:1;">Save Schedule</button>
+                  </div>
                 </div>
               </div>
             </div>
+```
+
+**BELOW CONTEXT (keep as-is):**
+```
+            <!-- Q&A Tab -->
+            <div id="tab-qa" class="tab-panel">
+```
+
+---
+
+**CHANGE 2 — Replace handleWebsiteScrape function (~line 1151)**
+
+Find:
+```
+          async function handleWebsiteScrape() { const url = document.getElementById('websiteUrl').value; if (!url) { showError('Please enter a URL'); return; } try { const response = await fetch('/api/content/scrape-website', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ customerId, botId, url, mode: websiteMode }) }); const data = await response.json(); if (response.ok) showSuccess(data.message || 'Website scraped!'); else showError(data.error || 'Scraping failed'); } catch (error) { showError('Network error'); } }
+```
+
+Replace with:
+```
+          async function handleWebsiteScrape() { const url = document.getElementById('websiteUrl').value; if (!url) { showError('Please enter a URL'); return; } try { const response = await fetch('/api/content/scrape-website', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ customerId, botId, url, mode: websiteMode }) }); const data = await response.json(); if (response.ok) { if (websiteMode === 'full') { const el = document.getElementById('alert-success'); el.textContent = data.message || 'Crawl started! Refresh to see progress.'; el.style.display = 'block'; setTimeout(() => el.style.display = 'none', 8000); } else { showSuccess(data.message || 'Website scraped!'); } } else showError(data.error || 'Scraping failed'); } catch (error) { showError('Network error'); } }
+```
+
+---
+
+**CHANGE 3 — Add new functions IMMEDIATELY AFTER the handleWebsiteScrape line (~after line 1151)**
+
+Paste these new lines right after `handleWebsiteScrape` and before `handleYoutubeTranscript`:
+```
+          function toggleSelectAll(el) { document.querySelectorAll('.doc-checkbox').forEach(cb => { cb.checked = el.checked; }); updateBulkButtons(); }
+          function updateBulkButtons() { const checked = document.querySelectorAll('.doc-checkbox:checked'); document.getElementById('retrainSelectedBtn').style.display = checked.length > 0 ? 'inline-flex' : 'none'; document.getElementById('deleteSelectedBtn').style.display = checked.length > 0 ? 'inline-flex' : 'none'; }
+          function getSelectedDocIds() { return Array.from(document.querySelectorAll('.doc-checkbox:checked')).map(cb => parseInt(cb.value)); }
+          async function retrainSelected() { const ids = getSelectedDocIds(); if (ids.length === 0) return; if (!confirm('Retrain ' + ids.length + ' selected document(s)? Website pages will be re-scraped with fresh content.')) return; try { const response = await fetch('/api/content/retrain', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ customerId, documentIds: ids }) }); const data = await response.json(); if (response.ok) { const el = document.getElementById('alert-success'); el.textContent = data.message; el.style.display = 'block'; setTimeout(() => el.style.display = 'none', 6000); } else showError(data.error || 'Retrain failed'); } catch (error) { showError('Network error'); } }
+          async function deleteSelected() { const ids = getSelectedDocIds(); if (ids.length === 0) return; if (!confirm('Delete ' + ids.length + ' selected document(s)? This will remove all training data for these pages.')) return; try { const response = await fetch('/api/content/delete-bulk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ customerId, documentIds: ids }) }); const data = await response.json(); if (response.ok) showSuccess(data.message); else showError(data.error || 'Delete failed'); } catch (error) { showError('Network error'); } }
+          function openRetrainSchedule() { document.getElementById('retrainModal').style.display = 'flex'; fetch('/api/content/retrain-schedule/' + botId).then(r => r.json()).then(data => { if (data.success) { document.getElementById('retrainFrequency').value = data.frequency || 'none'; document.getElementById('retrainTime').value = data.time || '03:00'; } }).catch(() => {}); }
+          function closeRetrainModal() { document.getElementById('retrainModal').style.display = 'none'; }
+          async function saveRetrainSchedule() { const frequency = document.getElementById('retrainFrequency').value; const time = document.getElementById('retrainTime').value; try { const response = await fetch('/api/content/retrain-schedule', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ customerId, botId, frequency, time }) }); const data = await response.json(); if (response.ok) { closeRetrainModal(); showSuccess(data.message); } else showError(data.error || 'Failed to save'); } catch (error) { showError('Network error'); } }
+```
+
+**BELOW CONTEXT (this already exists, don't duplicate):**
+```
+          async function handleYoutubeTranscript() { ...
             
             <!-- Q&A Tab -->
             <div id="tab-qa" class="tab-panel">
