@@ -1,36 +1,30 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import validator from 'validator';
-import { query } from '../db/database.js';
-import { loginLimiter, signupLimiter } from '../middleware/auth.js';
+import jwt from 'jsonwebtoken';
+import { query } from '../db/index.js';
+import { loginLimiter, signupLimiter, generateToken } from '../middleware/auth.js';
+
+const JWT_SECRET = process.env.JWT_SECRET || 'change-this-in-production';
 
 const router = express.Router();
 
-// Validation helper
+// Validation helpers
 function validateEmail(email) {
-  if (!email || !validator.isEmail(email)) {
-    return { valid: false, error: 'Invalid email address' };
-  }
+  if (!email) return { valid: false, error: 'Email is required' };
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) return { valid: false, error: 'Invalid email format' };
+  if (email.length > 255) return { valid: false, error: 'Email too long' };
   return { valid: true };
 }
 
 function validatePassword(password) {
-  if (!password || password.length < 8) {
-    return { valid: false, error: 'Password must be at least 8 characters' };
-  }
-  if (!/[A-Z]/.test(password)) {
-    return { valid: false, error: 'Password must contain at least one uppercase letter' };
-  }
-  if (!/[a-z]/.test(password)) {
-    return { valid: false, error: 'Password must contain at least one lowercase letter' };
-  }
-  if (!/[0-9]/.test(password)) {
-    return { valid: false, error: 'Password must contain at least one number' };
-  }
-  if (!/[!@#$%^&*]/.test(password)) {
-    return { valid: false, error: 'Password must contain at least one special character (!@#$%^&*)' };
-  }
+  if (!password) return { valid: false, error: 'Password is required' };
+  if (password.length < 8) return { valid: false, error: 'Password must be at least 8 characters' };
+  if (!/[A-Z]/.test(password)) return { valid: false, error: 'Password must contain at least one uppercase letter' };
+  if (!/[a-z]/.test(password)) return { valid: false, error: 'Password must contain at least one lowercase letter' };
+  if (!/[0-9]/.test(password)) return { valid: false, error: 'Password must contain at least one number' };
+  if (!/[!@#$%^&*]/.test(password)) return { valid: false, error: 'Password must contain at least one special character (!@#$%^&*)' };
   return { valid: true };
 }
 
@@ -45,7 +39,8 @@ router.post('/signup', signupLimiter, async (req, res) => {
       return res.status(400).json({ error: emailValidation.error });
     }
 
-    const businessEmailValidation = validateEmail(businessEmail);
+    const bEmailToUse = businessEmail || email;
+    const businessEmailValidation = validateEmail(bEmailToUse);
     if (!businessEmailValidation.valid) {
       return res.status(400).json({ error: 'Invalid business email address' });
     }
@@ -73,21 +68,20 @@ router.post('/signup', signupLimiter, async (req, res) => {
     const saltRounds = 10;
     const passwordHash = await bcrypt.hash(password, saltRounds);
 
-    // Create customer with 30-day trial
-    const trialEndsAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    // Create customer
     const customerResult = await query(
-      `INSERT INTO customers (name, email, business_email, trial_ends_at, subscription_status)
-       VALUES ($1, $2, $3, $4, 'trial')
+      `INSERT INTO customers (name, email, business_email)
+       VALUES ($1, $2, $3)
        RETURNING id`,
-      [name.trim(), email.toLowerCase(), businessEmail.toLowerCase(), trialEndsAt]
+      [name.trim(), email.toLowerCase(), bEmailToUse.toLowerCase()]
     );
 
     const customerId = customerResult.rows[0].id;
 
     // Create auth record
     await query(
-      `INSERT INTO customers_auth (customer_id, email, password_hash)
-       VALUES ($1, $2, $3)`,
+      `INSERT INTO customers_auth (customer_id, email, password_hash, role, bot_limit)
+       VALUES ($1, $2, $3, 'customer', 1)`,
       [customerId, email.toLowerCase(), passwordHash]
     );
 
@@ -99,17 +93,33 @@ router.post('/signup', signupLimiter, async (req, res) => {
       [customerId, 'My First Bot', botPublicId]
     );
 
-    // Create session
+    // Create session (for server-rendered pages)
     req.session.customerId = customerId;
     req.session.email = email.toLowerCase();
+    req.session.name = name.trim();
+
+    // Generate JWT token (for React frontend)
+    const token = generateToken({
+      customerId,
+      email: email.toLowerCase(),
+      name: name.trim(),
+      role: 'customer',
+      botLimit: 1
+    });
 
     console.log('[AUTH] New account created:', { customerId, email: email.toLowerCase() });
 
     res.json({
       success: true,
       message: 'Account created successfully',
-      customerId,
-      email: email.toLowerCase()
+      token,
+      user: {
+        customerId,
+        email: email.toLowerCase(),
+        name: name.trim(),
+        role: 'customer',
+        botLimit: 1
+      }
     });
 
   } catch (error) {
@@ -123,20 +133,14 @@ router.post('/login', loginLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Validation
-    const emailValidation = validateEmail(email);
-    if (!emailValidation.valid) {
-      return res.status(400).json({ error: emailValidation.error });
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    if (!password) {
-      return res.status(400).json({ error: 'Password is required' });
-    }
-
-    // Get user
+    // Find user
     const result = await query(
       `SELECT ca.id, ca.customer_id, ca.email, ca.password_hash, 
-              ca.failed_login_attempts, ca.locked_until,
+              ca.failed_login_attempts, ca.locked_until, ca.role, ca.bot_limit,
               c.name
        FROM customers_auth ca
        JOIN customers c ON c.id = ca.customer_id
@@ -152,9 +156,8 @@ router.post('/login', loginLimiter, async (req, res) => {
 
     // Check if account is locked
     if (user.locked_until && new Date(user.locked_until) > new Date()) {
-      const minutesRemaining = Math.ceil((new Date(user.locked_until) - new Date()) / 1000 / 60);
       return res.status(423).json({ 
-        error: `Account locked due to too many failed attempts. Try again in ${minutesRemaining} minutes.`
+        error: 'Account locked due to too many failed attempts. Try again later.'
       });
     }
 
@@ -163,7 +166,7 @@ router.post('/login', loginLimiter, async (req, res) => {
 
     if (!passwordMatch) {
       // Increment failed attempts
-      const newFailedAttempts = user.failed_login_attempts + 1;
+      const newFailedAttempts = (user.failed_login_attempts || 0) + 1;
       const lockAccount = newFailedAttempts >= 5;
 
       await query(
@@ -173,7 +176,7 @@ router.post('/login', loginLimiter, async (req, res) => {
          WHERE id = $3`,
         [
           newFailedAttempts,
-          lockAccount ? new Date(Date.now() + 15 * 60 * 1000) : null, // Lock for 15 minutes
+          lockAccount ? new Date(Date.now() + 15 * 60 * 1000) : null,
           user.id
         ]
       );
@@ -190,7 +193,7 @@ router.post('/login', loginLimiter, async (req, res) => {
       });
     }
 
-    // Successful login - reset failed attempts and update last login
+    // Successful login - reset failed attempts
     await query(
       `UPDATE customers_auth 
        SET failed_login_attempts = 0,
@@ -200,19 +203,33 @@ router.post('/login', loginLimiter, async (req, res) => {
       [user.id]
     );
 
-    // Create session
+    // Create session (for server-rendered pages)
     req.session.customerId = user.customer_id;
     req.session.email = user.email;
     req.session.name = user.name;
+
+    // Generate JWT token (for React frontend)
+    const token = generateToken({
+      customerId: user.customer_id,
+      email: user.email,
+      name: user.name,
+      role: user.role || 'customer',
+      botLimit: user.bot_limit || 1
+    });
 
     console.log('[AUTH] Login successful:', { customerId: user.customer_id, email: user.email });
 
     res.json({
       success: true,
       message: 'Login successful',
-      customerId: user.customer_id,
-      email: user.email,
-      name: user.name
+      token,
+      user: {
+        customerId: user.customer_id,
+        email: user.email,
+        name: user.name,
+        role: user.role || 'customer',
+        botLimit: user.bot_limit || 1
+      }
     });
 
   } catch (error) {
@@ -231,8 +248,7 @@ router.post('/logout', (req, res) => {
       return res.status(500).json({ error: 'Logout failed' });
     }
     
-    res.clearCookie('connect.sid');
-    
+    res.clearCookie('sessionId');
     console.log('[AUTH] Logout successful:', { customerId });
     
     res.json({ 
@@ -242,18 +258,40 @@ router.post('/logout', (req, res) => {
   });
 });
 
-// GET /api/auth/session - Check session status
+// GET /api/auth/session - Check session/token status
 router.get('/session', (req, res) => {
+  // Check session
   if (req.session && req.session.customerId) {
-    res.json({
+    return res.json({
       authenticated: true,
       customerId: req.session.customerId,
       email: req.session.email,
       name: req.session.name
     });
-  } else {
-    res.json({ authenticated: false });
   }
+  
+  // Check JWT
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.slice(7);
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET);
+      return res.json({
+        authenticated: true,
+        user: {
+          customerId: decoded.customerId,
+          email: decoded.email,
+          name: decoded.name,
+          role: decoded.role,
+          botLimit: decoded.botLimit
+        }
+      });
+    } catch (err) {
+      return res.json({ authenticated: false });
+    }
+  }
+
+  res.json({ authenticated: false });
 });
 
 export default router;
