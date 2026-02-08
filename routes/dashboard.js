@@ -1012,9 +1012,7 @@ router.get('/:customerId', async (req, res) => {
                 </div>
               </div>
             </div>
-```
 
-**BELOW CONTEXT (keep as-is):**
 ```
             <!-- Q&A Tab -->
             <div id="tab-qa" class="tab-panel">
