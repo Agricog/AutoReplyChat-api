@@ -364,13 +364,20 @@ router.post('/create-customer', requireAdminAuth, async (req, res) => {
   }
 });
 
-// GET /api/admin/backfill-embeddings - One-time: generate embeddings for existing chunks
-// Visit in browser: https://api.autoreplychat.com/api/admin/backfill-embeddings?key=YOUR_ADMIN_KEY
-// DELETE THIS ROUTE AFTER RUNNING ONCE
+// GET /api/admin/backfill-embeddings - Generate embeddings for all existing chunks
+// Usage: https://api.autoreplychat.com/api/admin/backfill-embeddings?key=YOUR_ADMIN_KEY
 router.get('/backfill-embeddings', requireAdminAuth, async (req, res) => {
   try {
+    // Ensure pgvector extension and embedding column exist
+    await query('CREATE EXTENSION IF NOT EXISTS vector');
+    await query('ALTER TABLE embeddings ADD COLUMN IF NOT EXISTS embedding vector(1536)');
+
     const OpenAI = (await import('openai')).default;
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+    if (!process.env.OPENAI_API_KEY) {
+      return res.status(400).json({ error: 'OPENAI_API_KEY environment variable is not set' });
+    }
 
     const BATCH_SIZE = 100;
     let processed = 0;
@@ -380,7 +387,7 @@ router.get('/backfill-embeddings', requireAdminAuth, async (req, res) => {
     const total = parseInt(countResult.rows[0].total);
 
     if (total === 0) {
-      return res.json({ success: true, message: 'All chunks already have embeddings. Nothing to do.' });
+      return res.json({ success: true, message: 'All chunks already have embeddings. Nothing to do.', total: 0 });
     }
 
     console.log(`[Backfill] Starting: ${total} chunks need embeddings`);
@@ -412,7 +419,7 @@ router.get('/backfill-embeddings', requireAdminAuth, async (req, res) => {
         processed += batch.rows.length;
         console.log(`[Backfill] Progress: ${processed}/${total}`);
       } catch (batchError) {
-        console.error(`[Backfill] Batch error:`, batchError.message);
+        console.error('[Backfill] Batch error:', batchError.message);
         errors++;
 
         // Wait on rate limits
@@ -426,13 +433,23 @@ router.get('/backfill-embeddings', requireAdminAuth, async (req, res) => {
           return res.json({
             success: false,
             message: `Stopped after too many errors. Processed ${processed}/${total}.`,
+            processed,
+            total,
             errors
           });
         }
       }
 
-      // Small delay between batches
+      // Small delay between batches to avoid rate limits
       await new Promise(r => setTimeout(r, 200));
+    }
+
+    // Try to create the vector index now that we have data
+    try {
+      await query('CREATE INDEX IF NOT EXISTS idx_embeddings_vector ON embeddings USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)');
+      console.log('[Backfill] ✓ Vector index created');
+    } catch (indexError) {
+      console.log('[Backfill] Vector index creation skipped:', indexError.message);
     }
 
     console.log(`[Backfill] Complete: ${processed}/${total} chunks embedded`);
