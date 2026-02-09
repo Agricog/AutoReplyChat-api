@@ -1,4 +1,5 @@
 import pg from 'pg';
+
 const { Pool } = pg;
 
 // Create connection pool
@@ -22,7 +23,7 @@ export async function query(text, params) {
   try {
     const res = await pool.query(text, params);
     const duration = Date.now() - start;
-    console.log('Executed query', { text, duration, rows: res.rowCount });
+    console.log('Executed query', { text: typeof text === 'string' ? text.substring(0, 80) : 'prepared', duration, rows: res.rowCount });
     return res;
   } catch (error) {
     console.error('Database query error:', error);
@@ -34,76 +35,6 @@ export async function query(text, params) {
 export async function getClient() {
   const client = await pool.connect();
   return client;
-}
-
-// Initialize database with schema
-export async function initializeDatabase() {
-  try {
-    console.log('Initializing database schema...');
-    
-    // Skip pgvector for now - use keyword search instead
-    // await query('CREATE EXTENSION IF NOT EXISTS vector');
-    
-    // Create customers table
-    await query(`
-      CREATE TABLE IF NOT EXISTS customers (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        email VARCHAR(255) NOT NULL,
-        business_email VARCHAR(255) NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    
-    // Create documents table
-    await query(`
-      CREATE TABLE IF NOT EXISTS documents (
-        id SERIAL PRIMARY KEY,
-        customer_id INTEGER REFERENCES customers(id) ON DELETE CASCADE,
-        title VARCHAR(500),
-        content_type VARCHAR(50),
-        source_url TEXT,
-        content TEXT,
-        metadata JSONB,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    
-    // Create embeddings table (without vector type for now)
-    await query(`
-      CREATE TABLE IF NOT EXISTS embeddings (
-        id SERIAL PRIMARY KEY,
-        customer_id INTEGER REFERENCES customers(id) ON DELETE CASCADE,
-        document_id INTEGER REFERENCES documents(id) ON DELETE CASCADE,
-        chunk_text TEXT NOT NULL,
-        metadata JSONB,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    
-    // Create leads table
-    await query(`
-      CREATE TABLE IF NOT EXISTS leads (
-        id SERIAL PRIMARY KEY,
-        customer_id INTEGER REFERENCES customers(id) ON DELETE CASCADE,
-        name VARCHAR(255) NOT NULL,
-        email VARCHAR(255) NOT NULL,
-        conversation JSONB,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    
-    // Create indexes (skip vector index)
-    await query('CREATE INDEX IF NOT EXISTS embeddings_customer_idx ON embeddings(customer_id)');
-    await query('CREATE INDEX IF NOT EXISTS documents_customer_idx ON documents(customer_id)');
-    await query('CREATE INDEX IF NOT EXISTS leads_customer_idx ON leads(customer_id)');
-    
-    console.log('✓ Database schema initialized successfully (using keyword search)');
-  } catch (error) {
-    console.error('Failed to initialize database:', error);
-    throw error;
-  }
 }
 
 export default pool;
