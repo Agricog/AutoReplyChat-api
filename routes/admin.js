@@ -151,7 +151,6 @@ router.get('/', requireAdminAuth, async (req, res) => {
           .btn-extend:hover { background: #bbf7d0; }
           .btn-danger { background: #fee2e2; color: #991b1b; }
           .btn-danger:hover { background: #fecaca; }
-
           .refresh-btn {
             background: #f59e0b;
             color: #0f172a;
@@ -277,7 +276,7 @@ router.get('/', requireAdminAuth, async (req, res) => {
 
         <script>
           const adminKey = new URLSearchParams(window.location.search).get('key');
-
+          
           function showToast(message, type) {
             const toast = document.getElementById('toast');
             toast.textContent = message;
@@ -361,6 +360,92 @@ router.post('/create-customer', requireAdminAuth, async (req, res) => {
     res.json({ success: true, message: 'Customer created', customerId: 1 });
   } catch (error) {
     console.error('Error creating customer:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/admin/backfill-embeddings - One-time: generate embeddings for existing chunks
+// Visit in browser: https://api.autoreplychat.com/api/admin/backfill-embeddings?key=YOUR_ADMIN_KEY
+// DELETE THIS ROUTE AFTER RUNNING ONCE
+router.get('/backfill-embeddings', requireAdminAuth, async (req, res) => {
+  try {
+    const OpenAI = (await import('openai')).default;
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+    const BATCH_SIZE = 100;
+    let processed = 0;
+    let errors = 0;
+
+    const countResult = await query('SELECT COUNT(*) as total FROM embeddings WHERE embedding IS NULL');
+    const total = parseInt(countResult.rows[0].total);
+
+    if (total === 0) {
+      return res.json({ success: true, message: 'All chunks already have embeddings. Nothing to do.' });
+    }
+
+    console.log(`[Backfill] Starting: ${total} chunks need embeddings`);
+
+    while (true) {
+      const batch = await query(
+        'SELECT id, chunk_text FROM embeddings WHERE embedding IS NULL ORDER BY id ASC LIMIT $1',
+        [BATCH_SIZE]
+      );
+
+      if (batch.rows.length === 0) break;
+
+      try {
+        const texts = batch.rows.map(r => r.chunk_text.replace(/\n+/g, ' ').trim());
+
+        const response = await openai.embeddings.create({
+          model: 'text-embedding-3-small',
+          input: texts,
+        });
+
+        for (let i = 0; i < batch.rows.length; i++) {
+          const embeddingStr = `[${response.data[i].embedding.join(',')}]`;
+          await query(
+            'UPDATE embeddings SET embedding = $1::vector WHERE id = $2',
+            [embeddingStr, batch.rows[i].id]
+          );
+        }
+
+        processed += batch.rows.length;
+        console.log(`[Backfill] Progress: ${processed}/${total}`);
+      } catch (batchError) {
+        console.error(`[Backfill] Batch error:`, batchError.message);
+        errors++;
+
+        // Wait on rate limits
+        if (batchError.status === 429) {
+          console.log('[Backfill] Rate limited, waiting 60s...');
+          await new Promise(r => setTimeout(r, 60000));
+          continue;
+        }
+
+        if (errors > 10) {
+          return res.json({
+            success: false,
+            message: `Stopped after too many errors. Processed ${processed}/${total}.`,
+            errors
+          });
+        }
+      }
+
+      // Small delay between batches
+      await new Promise(r => setTimeout(r, 200));
+    }
+
+    console.log(`[Backfill] Complete: ${processed}/${total} chunks embedded`);
+
+    res.json({
+      success: true,
+      message: `Backfill complete. ${processed}/${total} chunks now have embeddings.`,
+      processed,
+      total,
+      errors
+    });
+  } catch (error) {
+    console.error('[Backfill] Fatal error:', error);
     res.status(500).json({ error: error.message });
   }
 });
