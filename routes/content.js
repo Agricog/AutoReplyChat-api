@@ -20,6 +20,7 @@ router.post('/upload', upload.array('files', 10), async (req, res) => {
     for (const file of files) {
       try {
         const text = await extractTextFromFile(file.path, file.mimetype);
+
         const result = await storeDocument({
           customerId: parseInt(customerId),
           botId: botId ? parseInt(botId) : null,
@@ -37,6 +38,7 @@ router.post('/upload', upload.array('files', 10), async (req, res) => {
             mimetype: file.mimetype
           }
         });
+
         results.push({ filename: file.originalname, success: true, chunksStored: result.chunksStored });
         cleanupFile(file.path);
       } catch (error) {
@@ -91,6 +93,7 @@ router.post('/scrape-website', async (req, res) => {
     }
 
     const fullSite = mode === 'full';
+
     let validUrl;
     try { validUrl = new URL(url); } catch (e) { return res.status(400).json({ error: 'Invalid URL format' }); }
 
@@ -130,6 +133,7 @@ router.post('/scrape-website', async (req, res) => {
       })();
     } else {
       const pageData = await scrapeWebpage(validUrl.href);
+
       const result = await storeDocument({
         customerId: parseInt(customerId),
         botId: botId ? parseInt(botId) : null,
@@ -177,6 +181,7 @@ router.post('/retrain', async (req, res) => {
       message: `Retraining ${websiteDocs.length} page(s) in the background. Refresh the page in a moment to see updated content.`
     });
 
+    // Background retrain
     (async () => {
       const { scrapeWebpage } = await import('../services/webScraper.js');
       let successCount = 0;
@@ -186,16 +191,10 @@ router.post('/retrain', async (req, res) => {
           console.log(`[Retrain] Re-scraping doc ${doc.id}: ${doc.source_url}`);
           const pageData = await scrapeWebpage(doc.source_url);
 
+          // Delete old embeddings and document, then store fresh with new embeddings
           await query('DELETE FROM embeddings WHERE document_id = $1', [doc.id]);
-
-          await query(
-            `UPDATE documents SET content = $1, title = $2, last_retrained_at = NOW(),
-             metadata = jsonb_build_object('scrapedAt', $3::text, 'wordCount', $4::int, 'url', $5::text, 'retrained', true)
-             WHERE id = $6`,
-            [pageData.content, pageData.title, new Date().toISOString(), pageData.wordCount, pageData.url, doc.id]
-          );
-
           await query('DELETE FROM documents WHERE id = $1', [doc.id]);
+
           await storeDocument({
             customerId: parseInt(customerId),
             botId: doc.bot_id,
@@ -203,7 +202,12 @@ router.post('/retrain', async (req, res) => {
             contentType: 'website',
             sourceUrl: doc.source_url,
             content: pageData.content,
-            metadata: { scrapedAt: new Date().toISOString(), wordCount: pageData.wordCount, url: pageData.url, retrained: true }
+            metadata: {
+              scrapedAt: new Date().toISOString(),
+              wordCount: pageData.wordCount,
+              url: pageData.url,
+              retrained: true
+            }
           });
 
           successCount++;
@@ -295,6 +299,7 @@ router.post('/delete-bulk', async (req, res) => {
     }
 
     const validIds = docCheck.rows.map(r => r.id);
+
     await query('DELETE FROM embeddings WHERE document_id = ANY($1)', [validIds]);
     await query('DELETE FROM documents WHERE id = ANY($1)', [validIds]);
 
@@ -316,6 +321,7 @@ router.post('/youtube', async (req, res) => {
     }
 
     const { getYoutubeTranscript, getVideoMetadata } = await import('../services/youtubeTranscript.js');
+
     const transcriptData = await getYoutubeTranscript(url);
     const metadata = await getVideoMetadata(transcriptData.videoId);
 
@@ -326,10 +332,24 @@ router.post('/youtube', async (req, res) => {
       contentType: 'youtube',
       sourceUrl: metadata.url,
       content: transcriptData.text,
-      metadata: { extractedAt: new Date().toISOString(), videoId: transcriptData.videoId, wordCount: transcriptData.wordCount, duration: transcriptData.duration, thumbnail: metadata.thumbnail, extractionMethod: transcriptData.method }
+      metadata: {
+        extractedAt: new Date().toISOString(),
+        videoId: transcriptData.videoId,
+        wordCount: transcriptData.wordCount,
+        duration: transcriptData.duration,
+        thumbnail: metadata.thumbnail,
+        extractionMethod: transcriptData.method
+      }
     });
 
-    res.json({ success: true, message: `YouTube transcript extracted via ${transcriptData.method}`, videoId: transcriptData.videoId, wordCount: transcriptData.wordCount, chunksStored: result.chunksStored, method: transcriptData.method });
+    res.json({
+      success: true,
+      message: `YouTube transcript extracted via ${transcriptData.method}`,
+      videoId: transcriptData.videoId,
+      wordCount: transcriptData.wordCount,
+      chunksStored: result.chunksStored,
+      method: transcriptData.method
+    });
   } catch (error) {
     console.error('[YouTube] Error:', error);
     res.status(500).json({ error: 'Failed to extract YouTube transcript', details: error.message });
@@ -340,6 +360,7 @@ router.post('/youtube', async (req, res) => {
 router.get('/:customerId', async (req, res) => {
   try {
     const { customerId } = req.params;
+
     const result = await query(
       `SELECT id, title, content_type, source_url, metadata, created_at
        FROM documents WHERE customer_id = $1 ORDER BY created_at DESC`,
