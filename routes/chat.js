@@ -105,10 +105,10 @@ router.post('/', async (req, res) => {
     // Retrieve context from RAG
     const context = await retrieveContext(actualCustomerId, message, 5, actualBotId);
 
-    // Build system prompt
+    // Build system prompt with source-attributed context
     let systemPrompt = botInstructions;
     if (context && context.length > 0) {
-      systemPrompt += `\n\nUse the following information to help answer questions:\n${context}`;
+      systemPrompt += `\n\nUse the following reference information to answer questions. Each chunk is labeled with its source document — only use information from the document that is relevant to the user's question. Do not mix up information from different documents:\n\n${context.join('\n\n---\n\n')}`;
     }
 
     // Build messages for Claude
